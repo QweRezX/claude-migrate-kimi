@@ -17,6 +17,9 @@ Usage:
 
 Options:
     --with-tools   include tool calls/results as text (default: dialogue only)
+    --with-thinking include assistant thinking blocks
+    --since DATE   only sessions active on or after YYYY-MM-DD
+    --project STR  only sessions whose working directory contains STR
     --claude-dir   extra folder to search for Claude sessions (repeatable);
                    $CLAUDE_CONFIG_DIR is honored automatically
     --workspace ID force all sessions into this Kimi workspace id (wm_... or wd_...)
@@ -35,7 +38,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -120,10 +123,14 @@ def norm(path_str):
 
 # ---------------------------------------------------------------- Claude side
 
-def extract_messages(claude_jsonl, with_tools=False):
-    """Parse a Claude Code .jsonl session into (messages, title, cwd, stats)."""
+def extract_messages(claude_jsonl, with_tools=False, with_thinking=False):
+    """Parse a Claude Code .jsonl session into (messages, title, cwd, stats).
+
+    Each message is (role, text, ts_ms, thinks) where thinks is a list of
+    thinking-block strings (assistant only, empty unless with_thinking).
+    """
     msgs, title, cwd = [], None, None
-    stats = {"skipped_events": {}, "tool_blocks": 0}
+    stats = {"skipped_events": {}, "tool_blocks": 0, "thinking_blocks": 0}
     for line in Path(claude_jsonl).read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
@@ -146,6 +153,7 @@ def extract_messages(claude_jsonl, with_tools=False):
         if cwd is None and e.get("cwd"):
             cwd = e["cwd"]
         texts = []
+        thinks = []
         if isinstance(content, str):
             texts.append(content)
         elif isinstance(content, list):
@@ -155,6 +163,9 @@ def extract_messages(claude_jsonl, with_tools=False):
                 bt = b.get("type")
                 if bt == "text" and b.get("text"):
                     texts.append(b["text"])
+                elif with_thinking and bt == "thinking" and b.get("thinking"):
+                    thinks.append(b["thinking"])
+                    stats["thinking_blocks"] += 1
                 elif with_tools and bt == "tool_use":
                     args = json.dumps(b.get("input", {}), ensure_ascii=False)
                     texts.append(f"[tool call: {b.get('name', '?')}] {args[:500]}")
@@ -166,12 +177,12 @@ def extract_messages(claude_jsonl, with_tools=False):
                     texts.append(f"[tool result] {str(c)[:500]}")
                     stats["tool_blocks"] += 1
         text = "\n".join(x for x in texts if x and x.strip()).strip()
-        if not text:
+        if not text and not thinks:
             continue
         if role == "user" and text.startswith("<") and not with_tools:
             continue  # system reminders / command echoes
         ts = ts_ms(e["timestamp"]) if e.get("timestamp") else int(time.time() * 1000)
-        msgs.append((role, text, ts))
+        msgs.append((role, text, ts, thinks))
     return msgs, title, cwd, stats
 
 
@@ -228,8 +239,9 @@ def build_wire(msgs):
          "agentId": "main", "time": msgs[0][2]},
     ]
     turn = 0
-    for role, text, ts in msgs:
-        content = [{"type": "text", "text": text}]
+    for role, text, ts, thinks in msgs:
+        content = ([{"type": "think", "think": t} for t in thinks] +
+                   ([{"type": "text", "text": text}] if text else []))
         doc = {"type": "doc", "content": [
             {"type": "paragraph", "content": [{"type": "text", "text": p}]}
             for p in text.split("\n") if p.strip()
@@ -254,12 +266,14 @@ def build_wire(msgs):
         else:
             su = str(uuid.uuid4())
             zero = {"inputOther": 0, "output": 0, "inputCacheRead": 0, "inputCacheCreation": 0}
-            for ev in ({"type": "step.begin", "uuid": su, "turnId": str(turn), "step": 1},
-                       {"type": "content.part", "uuid": str(uuid.uuid4()),
-                        "turnId": str(turn), "step": 1, "stepUuid": su,
-                        "part": {"type": "text", "text": text}},
-                       {"type": "step.end", "uuid": su, "turnId": str(turn), "step": 1,
-                        "finishReason": "end_turn", "usage": zero}):
+            loop_evs = [{"type": "step.begin", "uuid": su, "turnId": str(turn), "step": 1}]
+            for part in content:
+                loop_evs.append({"type": "content.part", "uuid": str(uuid.uuid4()),
+                                 "turnId": str(turn), "step": 1, "stepUuid": su,
+                                 "part": part})
+            loop_evs.append({"type": "step.end", "uuid": su, "turnId": str(turn),
+                             "step": 1, "finishReason": "end_turn", "usage": zero})
+            for ev in loop_evs:
                 events.append({"type": "context.append_loop_event",
                                "agentId": "main", "event": ev, "time": ts})
             meta = {"model": {"provider": "agent-loop", "model": "claude-import"},
@@ -279,6 +293,7 @@ def build_wire(msgs):
 
 
 def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
+            with_thinking=False, since_ms=None, project=None,
             skip_existing=True, imported=None, report=None):
     src = str(Path(claude_jsonl).resolve())
     if skip_existing and imported and norm(src) in imported:
@@ -286,13 +301,23 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
         if report is not None:
             report["skipped_already_imported"].append(src)
         return None
-    msgs, title, cwd, stats = extract_messages(claude_jsonl, with_tools)
+    msgs, title, cwd, stats = extract_messages(claude_jsonl, with_tools, with_thinking)
     if not msgs:
         print(f"SKIP {Path(claude_jsonl).name}: no text messages")
         if report is not None:
             report["skipped_empty"].append(src)
         return None
     cwd = cwd or str(Path.home())
+    if project and project.lower() not in cwd.lower():
+        print(f"FILTER {Path(claude_jsonl).name}: project {cwd!r} does not match {project!r}")
+        if report is not None:
+            report["filtered"].append({"source": src, "reason": "project"})
+        return None
+    if since_ms and msgs[-1][2] < since_ms:
+        print(f"FILTER {Path(claude_jsonl).name}: last activity before --since")
+        if report is not None:
+            report["filtered"].append({"source": src, "reason": "since"})
+        return None
     ws = resolve_workspace(cwd, forced_ws)
     sid = f"session_{uuid.uuid4()}"
     sdir = kimi_home() / "sessions" / ws / sid
@@ -304,7 +329,7 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
                    "importedBy": f"claude2kimi/{VERSION}"},
         "title": title or clean_title(msgs[0][1]) or "Imported Claude session",
         "titleKind": "custom", "isCustomTitle": True,
-        "lastPrompt": next((t for r, t, _ in reversed(msgs) if r == "user"), "")[:500],
+        "lastPrompt": next((m[1] for m in reversed(msgs) if m[0] == "user"), "")[:500],
         "lastTurnReason": "completed",
         "createdAt": msgs[0][2], "updatedAt": msgs[-1][2],
     }
@@ -377,11 +402,25 @@ def main():
                         "(repeatable; also honors $CLAUDE_CONFIG_DIR)")
     p.add_argument("--workspace")
     p.add_argument("--with-tools", action="store_true")
+    p.add_argument("--with-thinking", action="store_true",
+                   help="include assistant thinking blocks (rendered as "
+                        "collapsible think parts)")
+    p.add_argument("--since", metavar="YYYY-MM-DD",
+                   help="only sessions with activity on or after this date")
+    p.add_argument("--project", metavar="SUBSTR",
+                   help="only sessions whose working directory contains SUBSTR")
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--undo", action="store_true")
     p.add_argument("--report", metavar="FILE")
     a = p.parse_args()
+
+    since_ms = None
+    if a.since:
+        try:
+            since_ms = ts_ms(a.since + "T00:00:00Z")
+        except ValueError:
+            p.error(f"--since: expected YYYY-MM-DD, got {a.since!r}")
 
     if a.undo:
         undo(a.dry_run)
@@ -396,12 +435,21 @@ def main():
     if a.all:
         print(f"Found {len(files)} Claude session file(s).")
 
+    proto = detect_protocol()
+    if proto and proto != "1.5":
+        print(f"WARNING: your Kimi Code uses wire protocol {proto!r}, but this "
+              f"tool was verified against '1.5'. Import one session first and "
+              f"check that it opens correctly before a batch run.",
+              file=sys.stderr)
+
     report = {"tool": f"claude2kimi/{VERSION}", "time": iso_of(int(time.time() * 1000)),
               "kimi_home": str(kimi_home()),
-              "kimi_wire_protocol_detected": detect_protocol(),
+              "kimi_wire_protocol_detected": proto,
               "dry_run": a.dry_run, "with_tools": a.with_tools,
+              "with_thinking": a.with_thinking,
+              "since": a.since, "project": a.project,
               "imported": [], "skipped_already_imported": [], "skipped_empty": [],
-              "errors": []} if a.report else None
+              "filtered": [], "errors": []} if a.report else None
 
     if not a.dry_run:
         idx = kimi_home() / "session_index.jsonl"
@@ -412,6 +460,8 @@ def main():
     for f in files:
         try:
             convert(f, a.workspace, a.dry_run, a.with_tools,
+                    with_thinking=a.with_thinking, since_ms=since_ms,
+                    project=a.project,
                     skip_existing=not a.force, imported=imported, report=report)
         except Exception as e:  # keep batch going, record for the report
             print(f"ERROR {f}: {e}", file=sys.stderr)

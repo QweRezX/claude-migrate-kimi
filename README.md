@@ -70,6 +70,9 @@ Restart Kimi Code after importing so it re-reads the session index.
 | `--claude-dir DIR` | extra folder to search for sessions (repeatable; `$CLAUDE_CONFIG_DIR` is honored automatically) |
 | `--dry-run` | print what would happen, write nothing |
 | `--with-tools` | include tool calls/results as text |
+| `--with-thinking` | include assistant thinking blocks (collapsible in the UI) |
+| `--since YYYY-MM-DD` | only sessions with activity on or after this date |
+| `--project SUBSTR` | only sessions whose working directory contains SUBSTR |
 | `--workspace ID` | force a target workspace (`wm_...`) |
 | `--force` | re-import sessions already imported |
 | `--undo` | delete previously imported sessions (supports `--dry-run`) |

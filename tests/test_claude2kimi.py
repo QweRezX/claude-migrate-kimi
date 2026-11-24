@@ -58,11 +58,28 @@ def test_extract_basic(session_file):
     msgs, title, cwd, stats = c2k.extract_messages(session_file)
     assert title == "Test session"
     assert cwd == "/work/proj"
-    roles = [r for r, _, _ in msgs]
+    roles = [m[0] for m in msgs]
     assert roles == ["user", "assistant", "user", "assistant"]
     assert msgs[0][1] == "Hello there"
     assert msgs[-1][1] == "Done."  # tool_use block dropped by default
     assert stats["tool_blocks"] == 0
+
+
+def test_extract_with_thinking(tmp_path):
+    f = tmp_path / "think.jsonl"
+    f.write_text("\n".join([
+        claude_line("user", "q"),
+        json.dumps({"type": "assistant", "timestamp": "2026-01-01T10:00:30.000Z",
+                    "cwd": "/work/proj",
+                    "message": {"role": "assistant", "content": [
+                        {"type": "thinking", "thinking": "let me think"},
+                        {"type": "text", "text": "answer"}]}}),
+    ]) + "\n", encoding="utf-8")
+    msgs, _, _, stats = c2k.extract_messages(f, with_thinking=True)
+    assert msgs[-1][3] == ["let me think"]
+    assert stats["thinking_blocks"] == 1
+    msgs2, _, _, _ = c2k.extract_messages(f)  # off by default
+    assert msgs2[-1][3] == []
 
 
 def test_extract_with_tools(session_file):
@@ -151,6 +168,35 @@ def test_convert_empty(tmp_path, kimi):
     f = tmp_path / "empty.jsonl"
     f.write_text('{"type":"queue-operation"}\n', encoding="utf-8")
     assert c2k.convert(str(f)) is None
+
+
+def test_convert_filters(kimi, session_file):
+    # project filter: cwd is /work/proj
+    assert c2k.convert(str(session_file), project="nomatch") is None
+    assert c2k.convert(str(session_file), project="PROJ") is not None
+    # since filter: session activity is 2026-01-01
+    assert c2k.convert(str(session_file), since_ms=c2k.ts_ms("2026-06-01T00:00:00Z"),
+                       skip_existing=False) is None
+    assert c2k.convert(str(session_file), since_ms=c2k.ts_ms("2025-01-01T00:00:00Z"),
+                       skip_existing=False) is not None
+
+
+def test_convert_thinking_parts(kimi, tmp_path):
+    f = tmp_path / "think.jsonl"
+    f.write_text("\n".join([
+        claude_line("user", "q"),
+        json.dumps({"type": "assistant", "timestamp": "2026-01-01T10:00:30.000Z",
+                    "cwd": "/work/proj",
+                    "message": {"role": "assistant", "content": [
+                        {"type": "thinking", "thinking": "hmm"},
+                        {"type": "text", "text": "answer"}]}}),
+    ]) + "\n", encoding="utf-8")
+    sid = c2k.convert(str(f), with_thinking=True)
+    wire = read_wire(kimi, sid)
+    appended = [e for e in wire if e["type"] == "agent.message.appended"
+                and e["message"]["message"]["role"] == "assistant"]
+    kinds = [c["type"] for c in appended[0]["message"]["message"]["content"]]
+    assert kinds == ["think", "text"]
 
 
 # ------------------------------------------------------------------ undo
