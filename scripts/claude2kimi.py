@@ -335,8 +335,15 @@ def implicit_bucket(workdir):
     return f"wd_{slug}_{digest}"
 
 
+WS_ID_RE = re.compile(r"^(wm|wd)_[A-Za-z0-9_-]+$")
+
+
 def resolve_workspace(cwd, forced=None):
     if forced:
+        if not WS_ID_RE.match(forced):
+            raise ValueError(
+                f"invalid workspace id {forced!r}: expected wm_... or wd_... "
+                f"(letters, digits, '_' and '-' only)")
         return forced
     # Windows paths are case-insensitive; macOS/Linux treat case as significant.
     fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)

@@ -436,3 +436,18 @@ def test_looks_like_codex(codex_file, tmp_path):
     junk = tmp_path / "junk.jsonl"
     junk.write_text('{"foo":1}\n', encoding="utf-8")
     assert not c2k.looks_like_codex_session(junk)
+
+
+def test_workspace_id_validation(kimi, session_file):
+    import pytest as _p
+    with _p.raises(ValueError):
+        c2k.convert(str(session_file), forced_ws="../../escape",
+                    skip_existing=False)
+    with _p.raises(ValueError):
+        c2k.convert(str(session_file), forced_ws="wm_ok/subdir",
+                    skip_existing=False)
+    # valid ids still work
+    assert c2k.resolve_workspace("/x", forced="wm_8ff0cf5b-89bc") == \
+        "wm_8ff0cf5b-89bc"
+    assert c2k.resolve_workspace("/x", forced="wd_my-proj_ab12cd34ef56") == \
+        "wd_my-proj_ab12cd34ef56"
