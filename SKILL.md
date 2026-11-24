@@ -48,6 +48,9 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
    - empty window → transcript events missing; same remedy.
 3. **Batch import:** `python scripts/claude2kimi.py --all --report import-report.json`
    Already-imported sessions are skipped automatically (`--force` overrides).
+   Narrow the batch with `--project SUBSTR` (match on working directory) and
+   `--since YYYY-MM-DD` (last-activity date); add `--with-thinking` to keep
+   assistant thinking blocks (rendered as collapsible think parts).
 4. **Verify:** count imported sessions:
    `grep -l importedFrom ~/.kimi-code/sessions/*/*/state.json | wc -l`
 

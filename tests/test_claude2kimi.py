@@ -219,6 +219,36 @@ def test_undo_removes_only_imported(kimi, session_file):
 
 # ------------------------------------------------------------ discovery
 
+def test_list_sessions(kimi, session_file, capsys):
+    rows = c2k.list_sessions([str(session_file)])
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Test session"
+    assert rows[0]["messages"] == 4
+    assert "Test session" in capsys.readouterr().out
+    assert c2k.list_sessions([str(session_file)], project="nomatch") == []
+
+
+def test_export_markdown(kimi, session_file, tmp_path):
+    out = tmp_path / "md"
+    written = c2k.export_markdown([str(session_file)], out)
+    assert len(written) == 1
+    md = Path(written[0]).read_text(encoding="utf-8")
+    assert md.startswith("# Test session")
+    assert "**User**" in md and "Hello there" in md
+    assert "Done." in md
+    assert "`/work/proj`" in md
+
+
+def test_rewrite_cwd(kimi, session_file):
+    assert c2k.rewrite_cwd("/work/proj", [("/work", "/mnt/new")]) == "/mnt/new/proj"
+    assert c2k.rewrite_cwd("/other", [("/work", "/mnt/new")]) == "/other"
+    sid = c2k.convert(str(session_file),
+                      rewrite_rules=[("/work", "/relocated")])
+    state = json.loads(next((kimi / "sessions").glob(f"*/{sid}/state.json"))
+                       .read_text(encoding="utf-8"))
+    assert state["cwd"] == "/relocated/proj"
+
+
 def test_discover_by_content(tmp_path, monkeypatch, session_file):
     root = tmp_path / "anywhere" / "weird-name"
     root.mkdir(parents=True)

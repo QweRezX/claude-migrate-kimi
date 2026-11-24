@@ -20,6 +20,9 @@ Options:
     --with-thinking include assistant thinking blocks
     --since DATE   only sessions active on or after YYYY-MM-DD
     --project STR  only sessions whose working directory contains STR
+    --list         show discovered sessions and exit
+    --to-md DIR    export sessions as Markdown files instead of importing
+    --rewrite-cwd OLD=NEW  retarget working-directory prefixes (repeatable)
     --claude-dir   extra folder to search for Claude sessions (repeatable);
                    $CLAUDE_CONFIG_DIR is honored automatically
     --workspace ID force all sessions into this Kimi workspace id (wm_... or wd_...)
@@ -38,7 +41,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -119,6 +122,15 @@ def clean_title(text):
 def norm(path_str):
     """Normalize a stored path for comparisons across separators."""
     return str(Path(path_str)).replace("\\", "/")
+
+
+def rewrite_cwd(cwd, rules):
+    """Apply --rewrite-cwd OLD=NEW rules (prefix match, first hit wins)."""
+    for old, new in rules or []:
+        if cwd.lower().startswith(old.lower()) if os.name == "nt" \
+                else cwd.startswith(old):
+            return new + cwd[len(old):]
+    return cwd
 
 
 # ---------------------------------------------------------------- Claude side
@@ -294,7 +306,7 @@ def build_wire(msgs):
 
 def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
             with_thinking=False, since_ms=None, project=None,
-            skip_existing=True, imported=None, report=None):
+            rewrite_rules=None, skip_existing=True, imported=None, report=None):
     src = str(Path(claude_jsonl).resolve())
     if skip_existing and imported and norm(src) in imported:
         print(f"SKIP {Path(claude_jsonl).name}: already imported as {imported[norm(src)]}")
@@ -308,6 +320,7 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
             report["skipped_empty"].append(src)
         return None
     cwd = cwd or str(Path.home())
+    cwd = rewrite_cwd(cwd, rewrite_rules)
     if project and project.lower() not in cwd.lower():
         print(f"FILTER {Path(claude_jsonl).name}: project {cwd!r} does not match {project!r}")
         if report is not None:
@@ -351,6 +364,80 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
                                    "messages": len(msgs), "turns": turns,
                                    "stats": stats})
     return sid
+
+
+def list_sessions(files, since_ms=None, project=None):
+    """Print a table of discovered sessions; returns rows for tests."""
+    rows = []
+    for f in files:
+        try:
+            msgs, title, cwd, _ = extract_messages(f)
+        except OSError as e:
+            print(f"ERROR {f}: {e}", file=sys.stderr)
+            continue
+        if not msgs:
+            continue
+        cwd = cwd or "?"
+        if project and project.lower() not in cwd.lower():
+            continue
+        if since_ms and msgs[-1][2] < since_ms:
+            continue
+        rows.append({"file": str(f), "title": title or clean_title(msgs[0][1]),
+                     "cwd": cwd, "messages": len(msgs),
+                     "last": iso_of(msgs[-1][2])[:10]})
+    rows.sort(key=lambda r: r["last"])
+    if rows:
+        w = min(60, max(len(r["title"]) for r in rows))
+        print(f"{'DATE':<11}{'MSGS':>5}  {'PROJECT':<30}  TITLE")
+        for r in rows:
+            print(f"{r['last']:<11}{r['messages']:>5}  {r['cwd'][-30:]:<30}  "
+                  f"{r['title'][:w]}")
+        print(f"\n{len(rows)} session(s).")
+    else:
+        print("No sessions match.")
+    return rows
+
+
+def export_markdown(files, outdir, with_tools=False, with_thinking=False,
+                    since_ms=None, project=None):
+    """Write each session as a readable Markdown file; returns written paths."""
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    written = []
+    used = set()
+    for f in files:
+        msgs, title, cwd, _ = extract_messages(f, with_tools, with_thinking)
+        if not msgs:
+            continue
+        cwd = cwd or "?"
+        if project and project.lower() not in cwd.lower():
+            continue
+        if since_ms and msgs[-1][2] < since_ms:
+            continue
+        name = re.sub(r"[^\w\-]+", "-", (title or Path(f).stem)).strip("-")[:60]
+        name = name or Path(f).stem
+        if name in used:
+            name = f"{name}-{Path(f).stem[:8]}"
+        used.add(name)
+        lines = [f"# {title or name}", "",
+                 f"- Project: `{cwd}`",
+                 f"- Messages: {len(msgs)}",
+                 f"- Period: {iso_of(msgs[0][2])[:10]} → {iso_of(msgs[-1][2])[:10]}",
+                 f"- Source: `{f}`", "", "---", ""]
+        for role, text, ts, thinks in msgs:
+            who = "**User**" if role == "user" else "**Assistant**"
+            lines.append(f"{who} · {iso_of(ts)[:16].replace('T', ' ')}")
+            lines.append("")
+            for t in thinks:
+                lines += ["> [!NOTE] Thinking", *[f"> {tl}" for tl in t.splitlines()], ""]
+            if text:
+                lines += [text, ""]
+        p = out / f"{name}.md"
+        p.write_text("\n".join(lines), encoding="utf-8")
+        written.append(str(p))
+        print(f"MD  {p.name} ({len(msgs)} msgs)")
+    print(f"\n{len(written)} markdown file(s) written to {out}")
+    return written
 
 
 def undo(dry_run=False):
@@ -412,6 +499,13 @@ def main():
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--undo", action="store_true")
+    p.add_argument("--list", action="store_true",
+                   help="list discovered sessions (date, project, messages) and exit")
+    p.add_argument("--to-md", metavar="OUTDIR",
+                   help="export sessions as Markdown files to OUTDIR instead of importing")
+    p.add_argument("--rewrite-cwd", action="append", metavar="OLD=NEW",
+                   help="retarget session working directory prefix (repeatable), "
+                        "e.g. --rewrite-cwd /old/home=/new/home")
     p.add_argument("--report", metavar="FILE")
     a = p.parse_args()
 
@@ -421,6 +515,13 @@ def main():
             since_ms = ts_ms(a.since + "T00:00:00Z")
         except ValueError:
             p.error(f"--since: expected YYYY-MM-DD, got {a.since!r}")
+
+    rewrite_rules = []
+    for r in a.rewrite_cwd or []:
+        if "=" not in r:
+            p.error(f"--rewrite-cwd: expected OLD=NEW, got {r!r}")
+        old, new = r.split("=", 1)
+        rewrite_rules.append((old, new))
 
     if a.undo:
         undo(a.dry_run)
@@ -434,6 +535,14 @@ def main():
                 "(optionally with --claude-dir DIR)")
     if a.all:
         print(f"Found {len(files)} Claude session file(s).")
+
+    if a.list:
+        list_sessions(files, since_ms, a.project)
+        return
+    if a.to_md:
+        export_markdown(files, a.to_md, a.with_tools, a.with_thinking,
+                        since_ms, a.project)
+        return
 
     proto = detect_protocol()
     if proto and proto != "1.5":
@@ -461,7 +570,7 @@ def main():
         try:
             convert(f, a.workspace, a.dry_run, a.with_tools,
                     with_thinking=a.with_thinking, since_ms=since_ms,
-                    project=a.project,
+                    project=a.project, rewrite_rules=rewrite_rules,
                     skip_existing=not a.force, imported=imported, report=report)
         except Exception as e:  # keep batch going, record for the report
             print(f"ERROR {f}: {e}", file=sys.stderr)
