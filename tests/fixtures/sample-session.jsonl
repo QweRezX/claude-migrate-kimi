@@ -1,0 +1,5 @@
+{"type":"custom-title","customTitle":"Fixture session"}
+{"type":"user","timestamp":"2026-01-01T10:00:00.000Z","cwd":"/work/demo","message":{"role":"user","content":[{"type":"text","text":"Hello from the fixture"}]}}
+{"type":"assistant","timestamp":"2026-01-01T10:00:30.000Z","cwd":"/work/demo","message":{"role":"assistant","content":[{"type":"text","text":"Hello! This is a sample conversation."}]}}
+{"type":"user","timestamp":"2026-01-01T10:01:00.000Z","cwd":"/work/demo","message":{"role":"user","content":[{"type":"text","text":"Second question"}]}}
+{"type":"assistant","timestamp":"2026-01-01T10:01:30.000Z","cwd":"/work/demo","message":{"role":"assistant","content":[{"type":"text","text":"Second answer."}]}}

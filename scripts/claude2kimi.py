@@ -38,7 +38,9 @@ from pathlib import Path
 VERSION = "0.2.0"
 IMPORT_MARKER = "claude-code"
 
-KIMI_HOME = Path(os.environ.get("KIMI_CODE_HOME", Path.home() / ".kimi-code"))
+def kimi_home():
+    """Kimi Code data root; resolved lazily so tests can override the env var."""
+    return Path(os.environ.get("KIMI_CODE_HOME", Path.home() / ".kimi-code"))
 
 
 def claude_roots(extra=None):
@@ -176,7 +178,7 @@ def extract_messages(claude_jsonl, with_tools=False):
 # ------------------------------------------------------------------ Kimi side
 
 def load_projects():
-    p = KIMI_HOME / "projects.json"
+    p = kimi_home() / "projects.json"
     if p.exists():
         try:
             return json.loads(p.read_text(encoding="utf-8")).get("projects", {})
@@ -208,7 +210,7 @@ def resolve_workspace(cwd, forced=None):
 def already_imported():
     """Map of claude source path -> kimi session id for previously imported sessions."""
     found = {}
-    for state in (KIMI_HOME / "sessions").glob("*/*/state.json"):
+    for state in (kimi_home() / "sessions").glob("*/*/state.json"):
         try:
             s = json.loads(state.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -293,7 +295,7 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
     cwd = cwd or str(Path.home())
     ws = resolve_workspace(cwd, forced_ws)
     sid = f"session_{uuid.uuid4()}"
-    sdir = KIMI_HOME / "sessions" / ws / sid
+    sdir = kimi_home() / "sessions" / ws / sid
     events, turns = build_wire(msgs)
     state = {
         "id": sid, "version": 2, "cwd": cwd, "archived": False,
@@ -316,7 +318,7 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
     wire = sdir / "agents" / "main" / "wire.jsonl"
     wire.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in events) + "\n",
                     encoding="utf-8")
-    with open(KIMI_HOME / "session_index.jsonl", "a", encoding="utf-8") as f:
+    with open(kimi_home() / "session_index.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     print(f"OK  {Path(claude_jsonl).name} -> {sid} ({len(msgs)} msgs, {state['title']!r})")
     if report is not None:
@@ -328,7 +330,7 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
 
 def undo(dry_run=False):
     removed = []
-    sessions_root = KIMI_HOME / "sessions"
+    sessions_root = kimi_home() / "sessions"
     for state in sessions_root.glob("*/*/state.json"):
         try:
             s = json.loads(state.read_text(encoding="utf-8"))
@@ -345,7 +347,7 @@ def undo(dry_run=False):
         if not dry_run:
             shutil.rmtree(d, ignore_errors=True)
     if not dry_run:
-        idx = KIMI_HOME / "session_index.jsonl"
+        idx = kimi_home() / "session_index.jsonl"
         if idx.exists():
             lines = [l for l in idx.read_text(encoding="utf-8").splitlines()
                      if l.strip() and json.loads(l).get("sessionId") not in ids]
@@ -355,7 +357,7 @@ def undo(dry_run=False):
 
 
 def detect_protocol():
-    for wire in (KIMI_HOME / "sessions").glob("*/*/agents/main/wire.jsonl"):
+    for wire in (kimi_home() / "sessions").glob("*/*/agents/main/wire.jsonl"):
         try:
             first = wire.open(encoding="utf-8").readline()
             return json.loads(first).get("protocol_version")
@@ -395,14 +397,14 @@ def main():
         print(f"Found {len(files)} Claude session file(s).")
 
     report = {"tool": f"claude2kimi/{VERSION}", "time": iso_of(int(time.time() * 1000)),
-              "kimi_home": str(KIMI_HOME),
+              "kimi_home": str(kimi_home()),
               "kimi_wire_protocol_detected": detect_protocol(),
               "dry_run": a.dry_run, "with_tools": a.with_tools,
               "imported": [], "skipped_already_imported": [], "skipped_empty": [],
               "errors": []} if a.report else None
 
     if not a.dry_run:
-        idx = KIMI_HOME / "session_index.jsonl"
+        idx = kimi_home() / "session_index.jsonl"
         if idx.exists():
             shutil.copy2(idx, idx.with_suffix(".jsonl.bak"))
 

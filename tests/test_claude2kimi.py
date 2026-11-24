@@ -1,0 +1,185 @@
+import json
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+import claude2kimi as c2k  # noqa: E402
+
+
+@pytest.fixture()
+def kimi(tmp_path, monkeypatch):
+    """Isolated Kimi home with one managed workspace rooted at /work."""
+    home = tmp_path / "kimi"
+    (home / "sessions").mkdir(parents=True)
+    (home / "session_index.jsonl").write_text("", encoding="utf-8")
+    (home / "projects.json").write_text(json.dumps({
+        "projects": {"wm_test-123": {"root": "/work", "name": "Work",
+                                     "kind": "managed"}}
+    }), encoding="utf-8")
+    monkeypatch.setenv("KIMI_CODE_HOME", str(home))
+    return home
+
+
+def claude_line(role, text, ts="2026-01-01T10:00:00.000Z", **extra):
+    e = {"type": role, "timestamp": ts, "cwd": "/work/proj",
+         "message": {"role": role, "content": [{"type": "text", "text": text}]}}
+    e.update(extra)
+    return json.dumps(e, ensure_ascii=False)
+
+
+@pytest.fixture()
+def session_file(tmp_path):
+    f = tmp_path / "sess.jsonl"
+    lines = [
+        json.dumps({"type": "custom-title", "customTitle": "Test session"}),
+        claude_line("user", "Hello there"),
+        claude_line("user", "<system-reminder>noise</system-reminder>"),
+        claude_line("assistant", "Hi! How can I help?"),
+        json.dumps({"type": "user", "timestamp": "2026-01-01T10:01:00.000Z",
+                    "cwd": "/work/proj", "isSidechain": True,
+                    "message": {"role": "user", "content": "sidechain"}}),
+        claude_line("user", "Do a thing"),
+        json.dumps({"type": "assistant", "timestamp": "2026-01-01T10:02:00.000Z",
+                    "cwd": "/work/proj",
+                    "message": {"role": "assistant", "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"f": 1}},
+                        {"type": "text", "text": "Done."}]}}),
+    ]
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return f
+
+
+# ------------------------------------------------------------- extraction
+
+def test_extract_basic(session_file):
+    msgs, title, cwd, stats = c2k.extract_messages(session_file)
+    assert title == "Test session"
+    assert cwd == "/work/proj"
+    roles = [r for r, _, _ in msgs]
+    assert roles == ["user", "assistant", "user", "assistant"]
+    assert msgs[0][1] == "Hello there"
+    assert msgs[-1][1] == "Done."  # tool_use block dropped by default
+    assert stats["tool_blocks"] == 0
+
+
+def test_extract_with_tools(session_file):
+    msgs, _, _, stats = c2k.extract_messages(session_file, with_tools=True)
+    last = msgs[-1][1]
+    assert "[tool call: Read]" in last and "Done." in last
+    assert stats["tool_blocks"] == 1
+
+
+def test_looks_like_session(session_file, tmp_path):
+    assert c2k.looks_like_claude_session(session_file)
+    junk = tmp_path / "junk.jsonl"
+    junk.write_text('{"foo": 1}\n{"bar": 2}\n', encoding="utf-8")
+    assert not c2k.looks_like_claude_session(junk)
+
+
+def test_clean_title():
+    assert c2k.clean_title('@"C:\\x\\file.docx" Real title') == "Real title"
+    assert len(c2k.clean_title("a" * 200)) <= 81
+
+
+# ------------------------------------------------------------ workspace
+
+def test_resolve_workspace_managed(kimi):
+    assert c2k.resolve_workspace("/work/proj/sub") == "wm_test-123"
+    assert c2k.resolve_workspace("/work") == "wm_test-123"
+
+
+def test_resolve_workspace_implicit(kimi):
+    ws = c2k.resolve_workspace("/elsewhere/proj")
+    assert ws.startswith("wd_") and ws == c2k.resolve_workspace("/elsewhere/proj")
+    assert c2k.resolve_workspace("/elsewhere/other") != ws
+
+
+def test_forced_workspace(kimi):
+    assert c2k.resolve_workspace("/work/x", forced="wm_forced") == "wm_forced"
+
+
+# --------------------------------------------------------------- convert
+
+def read_wire(home, sid):
+    wires = list((home / "sessions").glob(f"*/{sid}/agents/main/wire.jsonl"))
+    assert len(wires) == 1
+    return [json.loads(l) for l in wires[0].read_text(encoding="utf-8").splitlines()]
+
+
+def test_convert_creates_session(kimi, session_file):
+    sid = c2k.convert(str(session_file), skip_existing=False)
+    assert sid
+    state = json.loads(next((kimi / "sessions").glob(f"*/{sid}/state.json"))
+                       .read_text(encoding="utf-8"))
+    assert state["custom"]["importedFrom"] == "claude-code"
+    assert state["title"] == "Test session"
+    assert state["cwd"] == "/work/proj"
+    assert state["lastPrompt"] == "Do a thing"
+
+    wire = read_wire(kimi, sid)
+    assert wire[0] == {"type": "metadata", "protocol_version": "1.5",
+                       "created_at": wire[0]["created_at"]}
+    types = [e["type"] for e in wire]
+    # every user msg: appended+started+prompt+append_message; assistant: 3 loop + appended + 2 ended
+    assert types.count("agent.message.appended") == 4
+    assert types.count("turn.prompt") == 2
+    assert types.count("context.append_message") == 2
+    assert types.count("context.append_loop_event") == 6
+    assert types.count("turn.ended") == 2
+    # turnIds increment per completed turn
+    ended = [e["turnId"] for e in wire if e["type"] == "turn.ended"]
+    assert ended == [0, 1]
+    # index got exactly one record
+    idx = (kimi / "session_index.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(idx) == 1 and json.loads(idx[0])["sessionId"] == sid
+
+
+def test_convert_idempotent(kimi, session_file):
+    sid1 = c2k.convert(str(session_file))
+    assert sid1
+    sid2 = c2k.convert(str(session_file),
+                       imported=c2k.already_imported())
+    assert sid2 is None  # skipped
+    sid3 = c2k.convert(str(session_file), skip_existing=False)
+    assert sid3 and sid3 != sid1  # --force path
+
+
+def test_convert_empty(tmp_path, kimi):
+    f = tmp_path / "empty.jsonl"
+    f.write_text('{"type":"queue-operation"}\n', encoding="utf-8")
+    assert c2k.convert(str(f)) is None
+
+
+# ------------------------------------------------------------------ undo
+
+def test_undo_removes_only_imported(kimi, session_file):
+    sid = c2k.convert(str(session_file))
+    native = kimi / "sessions" / "wm_test-123" / "session_native"
+    native.mkdir(parents=True)
+    (native / "state.json").write_text(json.dumps(
+        {"id": "session_native", "custom": {}}), encoding="utf-8")
+
+    c2k.undo(dry_run=True)
+    assert (kimi / "sessions" / "wm_test-123" / sid).exists()  # dry-run keeps
+
+    c2k.undo()
+    assert not (kimi / "sessions" / "wm_test-123" / sid).exists()
+    assert native.exists()  # native session untouched
+    assert (kimi / "session_index.jsonl").read_text(encoding="utf-8").strip() == ""
+
+
+# ------------------------------------------------------------ discovery
+
+def test_discover_by_content(tmp_path, monkeypatch, session_file):
+    root = tmp_path / "anywhere" / "weird-name"
+    root.mkdir(parents=True)
+    (root / "a.jsonl").write_text(session_file.read_text(encoding="utf-8"),
+                                  encoding="utf-8")
+    (root / "junk.jsonl").write_text('{"x":1}\n', encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "anywhere"))
+    found = c2k.discover_sessions()
+    assert any(f.endswith("a.jsonl") for f in found)
+    assert not any("junk" in f for f in found)
