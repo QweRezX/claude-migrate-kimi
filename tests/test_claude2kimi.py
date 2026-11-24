@@ -313,6 +313,45 @@ def test_rewrite_cwd(kimi, session_file, work):
     assert state["cwd"] == str(work.parent / "moved" / "proj")
 
 
+# ---------------------------------------------------------------- wizard
+
+def run_wizard(monkeypatch, answers):
+    it = iter(answers)
+    c2k.wizard(input_fn=lambda prompt="": next(it))
+
+
+def test_wizard_quit(kimi, monkeypatch, capsys):
+    monkeypatch.setattr(c2k, "discover_sessions", lambda *a, **k: [])
+    run_wizard(monkeypatch, [])
+    assert "No Claude sessions found" in capsys.readouterr().out
+
+
+def test_wizard_list_then_quit(kimi, session_file, monkeypatch, capsys):
+    monkeypatch.setattr(c2k, "discover_sessions",
+                        lambda *a, **k: [str(session_file)])
+    run_wizard(monkeypatch, ["1", "0"])
+    out = capsys.readouterr().out
+    assert "Test session" in out and "Bye!" in out
+    # nothing imported
+    assert not list((kimi / "sessions").glob("*/*/state.json"))
+
+
+def test_wizard_import_all(kimi, session_file, monkeypatch, capsys):
+    monkeypatch.setattr(c2k, "discover_sessions",
+                        lambda *a, **k: [str(session_file)])
+    run_wizard(monkeypatch, ["2", "y", "0"])
+    out = capsys.readouterr().out
+    assert "1 session(s) imported" in out
+    assert len(list((kimi / "sessions").glob("*/*/state.json"))) == 1
+
+
+def test_wizard_import_declined(kimi, session_file, monkeypatch):
+    monkeypatch.setattr(c2k, "discover_sessions",
+                        lambda *a, **k: [str(session_file)])
+    run_wizard(monkeypatch, ["2", "n", "0"])
+    assert not list((kimi / "sessions").glob("*/*/state.json"))
+
+
 # ------------------------------------------------------------ discovery
 
 def test_discover_by_content(tmp_path, monkeypatch, session_file):

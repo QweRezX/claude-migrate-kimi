@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -617,6 +617,110 @@ def undo(dry_run=False):
           f"{'would be ' if dry_run else ''}removed.")
 
 
+# ------------------------------------------------------------------ wizard
+
+def _ask(prompt, input_fn=input):
+    try:
+        return input_fn(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
+
+
+def _confirm(prompt, input_fn=input):
+    return _ask(f"{prompt} [y/N] ", input_fn).lower() in ("y", "yes")
+
+
+def _import_batch(files, **opts):
+    """Import a batch with index backup; the shared path for CLI and wizard."""
+    idx = kimi_home() / "session_index.jsonl"
+    if idx.exists():
+        shutil.copy2(idx, idx.with_suffix(".jsonl.bak"))
+    imported = already_imported()
+    ok = 0
+    for f in files:
+        try:
+            if convert(f, imported=imported, **opts):
+                ok += 1
+        except Exception as e:
+            print(f"ERROR {f}: {e}", file=sys.stderr)
+    return ok
+
+
+def wizard(input_fn=input):
+    """Interactive step-by-step mode, started when run with no arguments."""
+    print("claude2kimi — import Claude Code sessions into Kimi Code")
+    print(f"(kimi home: {kimi_home()})\n")
+    files = discover_sessions()
+    if not files:
+        print("No Claude sessions found in the default locations.")
+        print("If Claude was installed elsewhere, run:")
+        print("  python3 claude2kimi.py --all --claude-dir /path/to/folder")
+        return
+    print(f"Found {len(files)} Claude session file(s).\n")
+
+    while True:
+        print("What would you like to do?")
+        print("  [1] List sessions (writes nothing)")
+        print("  [2] Import everything")
+        print("  [3] Import one project")
+        print("  [4] Import recent sessions (by date)")
+        print("  [5] Export to Markdown (no Kimi needed)")
+        print("  [6] Migrate config (skills, CLAUDE.md, MCP)")
+        print("  [7] Undo a previous import")
+        print("  [0] Quit")
+        choice = _ask("> ", input_fn)
+
+        if choice == "1":
+            list_sessions(files)
+        elif choice == "2":
+            list_sessions(files)
+            if _confirm(f"\nImport all {len(files)} session(s)?", input_fn):
+                ok = _import_batch(files)
+                print(f"\nDone: {ok} session(s) imported. "
+                      f"Restart Kimi Code to see them.")
+                print("Changed your mind? Run: python3 claude2kimi.py --undo")
+        elif choice == "3":
+            sub = _ask("Project name or path fragment: ", input_fn)
+            if not sub:
+                continue
+            rows = list_sessions(files, project=sub)
+            if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
+                                 input_fn):
+                ok = _import_batch(files, project=sub)
+                print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
+        elif choice == "4":
+            date = _ask("Only sessions active on/after (YYYY-MM-DD): ", input_fn)
+            try:
+                since = ts_ms(date + "T00:00:00Z")
+            except ValueError:
+                print("Expected a date like 2026-10-01.")
+                continue
+            rows = list_sessions(files, since_ms=since)
+            if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
+                                 input_fn):
+                ok = _import_batch(files, since_ms=since)
+                print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
+        elif choice == "5":
+            outdir = _ask("Output folder [./claude-export]: ", input_fn) \
+                or "./claude-export"
+            export_markdown(files, outdir)
+        elif choice == "6":
+            migrate_config(dry_run=True)
+            if _confirm("\nApply these changes?", input_fn):
+                migrate_config(dry_run=False)
+        elif choice == "7":
+            undo(dry_run=True)
+            if _confirm("\nRemove these imported sessions?", input_fn):
+                undo(dry_run=False)
+        elif choice in ("0", "q", ""):
+            print("Bye!")
+            return
+        else:
+            print("Pick a number from the menu.")
+        print()
+
+
 def detect_protocol():
     for wire in (kimi_home() / "sessions").glob("*/*/agents/main/wire.jsonl"):
         try:
@@ -628,6 +732,9 @@ def detect_protocol():
 
 
 def main():
+    if len(sys.argv) == 1 and sys.stdin.isatty():
+        wizard()
+        return
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("files", nargs="*")

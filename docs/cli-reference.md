@@ -4,6 +4,21 @@ Full flag documentation for `claude2kimi.py`. For a quick start see the
 [README](../README.md); run `python3 claude2kimi.py --help` for the built-in
 summary.
 
+## Interactive wizard
+
+Run with **no arguments** in a terminal:
+
+```bash
+python3 claude2kimi.py
+```
+
+and a step-by-step menu opens: list sessions, import everything / one project
+/ recent sessions, export to Markdown, migrate config, undo — each
+destructive step shows a preview first and asks for confirmation. The wizard
+is the recommended path for first-time users; everything it does maps to the
+flags below. When stdin is not a terminal (pipes, CI), the wizard is skipped
+and arguments are required as usual.
+
 Invocation forms:
 
 ```bash

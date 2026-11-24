@@ -35,12 +35,13 @@ You need Python 3.10+ (macOS/Linux already have it; on Windows get it from
 # 1. Download the tool (one file)
 curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-# 2. See what it found — nothing is written yet
-python3 claude2kimi.py --all --list
-
-# 3. Import everything
-python3 claude2kimi.py --all
+# 2. Run it — an interactive wizard walks you through everything
+python3 claude2kimi.py
 ```
+
+The wizard lists your sessions, imports all or just one project, exports to
+Markdown, migrates config, and can undo — no flags to memorize. Prefer flags?
+They all still work:
 
 Restart Kimi Code — your Claude sessions are in the picker. Something wrong?
 `python3 claude2kimi.py --undo` puts everything back.
