@@ -114,6 +114,29 @@ Format notes for contributors: [references/formats.md](references/formats.md).
 - Everything imported is tagged (`custom.importedFrom: "claude-code"`) and
   removable with one command.
 
+## Roadmap
+
+Ideas borrowed from neighboring tools (see below), roughly in priority order:
+
+- [ ] `--list` — table of discovered sessions (date, project, message count) before importing
+- [ ] `--to-md` — export sessions to readable Markdown, no Kimi required
+- [ ] `--rewrite-cwd OLD=NEW` — retarget absolute paths when moving to a machine with a different layout
+- [ ] `--config` — full-move mode: copy skills, convert `CLAUDE.md` → `AGENTS.md`, map MCP server configs
+- [ ] reverse export (Kimi Code → Claude Code)
+
+Contributions welcome — open an issue to discuss before large PRs.
+
+## Related tools
+
+No other tool imports Claude Code sessions **into Kimi Code** (this repo is,
+as far as we know, the first). Neighboring projects:
+
+- [a2migrate](https://github.com/MrMirhan/a2migrate) — Claude Code ↔ OpenCode session/skill/MCP migration (Go)
+- [oh-my-pi](https://github.com/can1357/oh-my-pi) — agent with a built-in `--from-claude` importer
+- [pi-import-claude-history](https://pi.dev/packages/pi-import-claude-history) — Claude → Pi importer
+- [claude-conversation-transfer](https://github.com/arghhhhh/claude-conversation-transfer) — Claude ↔ Claude moves between machines, with path retargeting
+- [claude-code-log](https://github.com/daaain/claude-code-log), [claude-JSONL-browser](https://github.com/withLinda/claude-JSONL-browser), [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) — render Claude sessions to HTML/Markdown
+
 ## License
 
 MIT
