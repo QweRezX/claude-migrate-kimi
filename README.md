@@ -1,5 +1,7 @@
 # claude-migrate
 
+**English** | [Русский](README.ru.md)
+
 [![tests](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml/badge.svg)](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml)
 [![release](https://img.shields.io/github/v/release/QweRezX/claude-migrate-kimi)](https://github.com/QweRezX/claude-migrate-kimi/releases/latest)
 [![license](https://img.shields.io/github/license/QweRezX/claude-migrate-kimi)](LICENSE)
