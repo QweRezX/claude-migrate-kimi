@@ -66,7 +66,9 @@ Restart Kimi Code — your Claude sessions are in the picker. Something wrong?
 | Undo the whole import | `--undo` |
 | Report a problem | add `--report report.json` and [send it](FEEDBACK.md) |
 
-Run `python3 claude2kimi.py --help` for the full flag reference.
+Run `python3 claude2kimi.py --help` for the built-in summary, or the
+[**full CLI reference**](docs/cli-reference.md) for detailed docs on every
+flag — examples, combinations and safety notes.
 
 ## Install as a Kimi Code skill
 
