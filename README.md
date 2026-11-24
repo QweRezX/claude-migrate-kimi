@@ -9,6 +9,8 @@ One Python file, no dependencies — your Claude conversations reappear in the
 Kimi Code session picker with their original titles and dates, readable like
 native sessions.
 
+![claude2kimi demo: list, import, undo](docs/demo.gif)
+
 ```mermaid
 flowchart LR
     subgraph before["What you have"]
