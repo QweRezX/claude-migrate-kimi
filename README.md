@@ -24,7 +24,10 @@ stuck in `~/.claude/projects/`. Inspired by ChatGPT desktop's one-click
 
 ## Install
 
-**Option A — just the script (simplest).** Download one file, no git needed:
+**Grab the latest release:** [github.com/QweRezX/claude-migrate-kimi/releases/latest](https://github.com/QweRezX/claude-migrate-kimi/releases/latest) —
+download `claude2kimi-v*.zip` from Assets, unzip, done. No git, no dependencies.
+
+**Option A — just the script.** One file, always current:
 
 - Browser: [claude2kimi.py (raw)](https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py) → save anywhere
 - Or terminal:
