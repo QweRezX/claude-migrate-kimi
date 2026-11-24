@@ -33,6 +33,21 @@ their job and exit without importing.
 
 ---
 
+## Source selection
+
+### `--from {claude,codex}`
+Which agent to import from (default: `claude`). `codex` reads rollout
+files from `~/.codex/sessions/` (or `$CODEX_HOME`), one file per session
+(Codex creates a new rollout on every resume). Notes for Codex:
+
+- reasoning blocks are **encrypted by OpenAI** — `--with-thinking` has
+  nothing to import there;
+- `.zst`-compressed archives are skipped (decompress with `zstd -d`
+  first if you need them);
+- tool calls (`exec` etc.) are included with `--with-tools`.
+
+The wizard (no-args mode) asks for the source as its first question.
+
 ## Discovery
 
 ### `--all`

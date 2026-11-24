@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -93,9 +93,49 @@ def looks_like_claude_session(path):
     return False
 
 
-def discover_sessions(extra_dirs=None):
-    """All Claude session .jsonl files under the candidate roots."""
+def looks_like_codex_session(path):
+    """Codex rollouts start with a session_meta event."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i > 5:
+                    break
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if e.get("type") == "session_meta":
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def codex_roots(extra=None):
+    roots = [Path(c) for c in (extra or [])]
+    env = os.environ.get("CODEX_HOME")
+    if env:
+        roots.append(Path(env))
+    roots.append(Path.home() / ".codex")
+    seen, out = set(), []
+    for r in roots:
+        r = r.expanduser()
+        if r.is_dir() and str(r) not in seen:
+            seen.add(str(r))
+            out.append(r)
+    return out
+
+
+def discover_sessions(extra_dirs=None, source="claude"):
+    """Session .jsonl files for the given source, found by content."""
     found = []
+    if source == "codex":
+        for root in codex_roots(extra_dirs):
+            base = root / "sessions" if (root / "sessions").is_dir() else root
+            for f in sorted(base.rglob("*.jsonl")):
+                if looks_like_codex_session(f):
+                    found.append(str(f))
+        return found
     for root in claude_roots(extra_dirs):
         base = root / "projects" if (root / "projects").is_dir() else root
         for f in sorted(base.rglob("*.jsonl")):
@@ -199,6 +239,83 @@ def extract_messages(claude_jsonl, with_tools=False, with_thinking=False):
     return msgs, title, cwd, stats
 
 
+# ----------------------------------------------------------------- Codex side
+
+def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
+    """Parse a Codex CLI/Desktop rollout .jsonl into (messages, title, cwd, stats).
+
+    Canonical content lives in `response_item` events (payload.type ==
+    "message"); `event_msg` events duplicate it and are ignored. Reasoning
+    blocks are encrypted by OpenAI and cannot be imported. Each rollout file
+    is one session (Codex creates a new file per resume).
+    """
+    msgs, title, cwd = [], None, None
+    stats = {"skipped_events": {}, "tool_blocks": 0, "thinking_blocks": 0}
+    for line in Path(codex_jsonl).read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            stats["skipped_events"]["<invalid json>"] = stats["skipped_events"].get("<invalid json>", 0) + 1
+            continue
+        t = e.get("type")
+        p = e.get("payload") or {}
+        if not isinstance(p, dict):
+            continue
+        if t == "session_meta":
+            cwd = cwd or p.get("cwd")
+            continue
+        ts = ts_ms(e["timestamp"]) if e.get("timestamp") else int(time.time() * 1000)
+        if t == "response_item" and p.get("type") == "message":
+            role = p.get("role")
+            if role not in ("user", "assistant"):
+                stats["skipped_events"][f"message/{role}"] = \
+                    stats["skipped_events"].get(f"message/{role}", 0) + 1
+                continue
+            texts = [b.get("text", "") for b in (p.get("content") or [])
+                     if isinstance(b, dict) and b.get("type") in
+                     ("input_text", "output_text", "text")]
+            text = "\n".join(x for x in texts if x and x.strip()).strip()
+            if not text:
+                continue
+            if role == "user" and text.startswith("<"):
+                continue  # environment_context / user_instructions wrappers
+            msgs.append((role, text, ts, []))
+        elif with_tools and t == "response_item" and \
+                p.get("type") in ("custom_tool_call", "function_call"):
+            args = p.get("input") or p.get("arguments") or ""
+            if not isinstance(args, str):
+                args = json.dumps(args, ensure_ascii=False)
+            msgs.append(("assistant",
+                         f"[tool call: {p.get('name', '?')}] {args[:500]}",
+                         ts, []))
+            stats["tool_blocks"] += 1
+        elif with_tools and t == "response_item" and \
+                p.get("type") in ("custom_tool_call_output", "function_call_output"):
+            out = p.get("output") or ""
+            if not isinstance(out, str):
+                out = json.dumps(out, ensure_ascii=False)
+            msgs.append(("assistant", f"[tool result] {out[:500]}", ts, []))
+            stats["tool_blocks"] += 1
+        elif with_thinking and t == "response_item" and p.get("type") == "reasoning":
+            summary = [s.get("text", "") for s in (p.get("summary") or [])
+                       if isinstance(s, dict) and s.get("text")]
+            if summary:
+                msgs.append(("assistant", "", ts, summary))
+                stats["thinking_blocks"] += len(summary)
+            # encrypted_content is not decryptable — silently skipped
+        else:
+            stats["skipped_events"][f"{t}/{p.get('type')}"] = \
+                stats["skipped_events"].get(f"{t}/{p.get('type')}", 0) + 1
+    return msgs, title, cwd, stats
+
+
+EXTRACTORS = {"claude": extract_messages, "codex": extract_codex}
+MARKERS = {"claude": "claude-code", "codex": "codex"}
+
+
 # ------------------------------------------------------------------ Kimi side
 
 def load_projects():
@@ -240,7 +357,7 @@ def already_imported():
         except (json.JSONDecodeError, OSError):
             continue
         custom = s.get("custom") or {}
-        if custom.get("importedFrom") == IMPORT_MARKER and custom.get("claudeSession"):
+        if custom.get("importedFrom") and custom.get("claudeSession"):
             found[norm(custom["claudeSession"])] = s.get("id")
     return found
 
@@ -307,14 +424,16 @@ def build_wire(msgs):
 
 def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
             with_thinking=False, since_ms=None, project=None,
-            rewrite_rules=None, skip_existing=True, imported=None, report=None):
+            rewrite_rules=None, source="claude",
+            skip_existing=True, imported=None, report=None):
     src = str(Path(claude_jsonl).resolve())
     if skip_existing and imported and norm(src) in imported:
         print(f"SKIP {Path(claude_jsonl).name}: already imported as {imported[norm(src)]}")
         if report is not None:
             report["skipped_already_imported"].append(src)
         return None
-    msgs, title, cwd, stats = extract_messages(claude_jsonl, with_tools, with_thinking)
+    extractor = EXTRACTORS[source]
+    msgs, title, cwd, stats = extractor(claude_jsonl, with_tools, with_thinking)
     if not msgs:
         print(f"SKIP {Path(claude_jsonl).name}: no text messages")
         if report is not None:
@@ -339,9 +458,9 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
     state = {
         "id": sid, "version": 2, "cwd": cwd, "archived": False,
         "agents": {"main": {"homedir": f"{sdir.as_posix()}/agents/main", "type": "main"}},
-        "custom": {"importedFrom": IMPORT_MARKER, "claudeSession": src,
+        "custom": {"importedFrom": MARKERS[source], "claudeSession": src,
                    "importedBy": f"claude2kimi/{VERSION}"},
-        "title": title or clean_title(msgs[0][1]) or "Imported Claude session",
+        "title": title or clean_title(msgs[0][1]) or f"Imported {source} session",
         "titleKind": "custom", "isCustomTitle": True,
         "lastPrompt": next((m[1] for m in reversed(msgs) if m[0] == "user"), "")[:500],
         "lastTurnReason": "completed",
@@ -367,12 +486,12 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
     return sid
 
 
-def list_sessions(files, since_ms=None, project=None):
+def list_sessions(files, since_ms=None, project=None, source="claude"):
     """Print a table of discovered sessions; returns rows for tests."""
     rows = []
     for f in files:
         try:
-            msgs, title, cwd, _ = extract_messages(f)
+            msgs, title, cwd, _ = EXTRACTORS[source](f)
         except OSError as e:
             print(f"ERROR {f}: {e}", file=sys.stderr)
             continue
@@ -400,14 +519,14 @@ def list_sessions(files, since_ms=None, project=None):
 
 
 def export_markdown(files, outdir, with_tools=False, with_thinking=False,
-                    since_ms=None, project=None):
+                    since_ms=None, project=None, source="claude"):
     """Write each session as a readable Markdown file; returns written paths."""
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     written = []
     used = set()
     for f in files:
-        msgs, title, cwd, _ = extract_messages(f, with_tools, with_thinking)
+        msgs, title, cwd, _ = EXTRACTORS[source](f, with_tools, with_thinking)
         if not msgs:
             continue
         cwd = cwd or "?"
@@ -597,7 +716,7 @@ def undo(dry_run=False):
             s = json.loads(state.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if (s.get("custom") or {}).get("importedFrom") == IMPORT_MARKER:
+        if (s.get("custom") or {}).get("importedFrom"):
             removed.append((s["id"], state.parent))
     if not removed:
         print("Nothing to undo: no imported sessions found.")
@@ -649,15 +768,20 @@ def _import_batch(files, **opts):
 
 def wizard(input_fn=input):
     """Interactive step-by-step mode, started when run with no arguments."""
-    print("claude2kimi — import Claude Code sessions into Kimi Code")
+    print("claude2kimi — import agent sessions into Kimi Code")
     print(f"(kimi home: {kimi_home()})\n")
-    files = discover_sessions()
+    print("Import from which agent?")
+    print("  [1] Claude Code")
+    print("  [2] Codex CLI / Codex Desktop")
+    source = "codex" if _ask("> ", input_fn) == "2" else "claude"
+    files = discover_sessions(source=source)
     if not files:
-        print("No Claude sessions found in the default locations.")
-        print("If Claude was installed elsewhere, run:")
-        print("  python3 claude2kimi.py --all --claude-dir /path/to/folder")
+        print(f"No {source} sessions found in the default locations.")
+        print("If it was installed elsewhere, run:")
+        print(f"  python3 claude2kimi.py --from {source} --all "
+              f"--claude-dir /path/to/folder")
         return
-    print(f"Found {len(files)} Claude session file(s).\n")
+    print(f"Found {len(files)} {source} session file(s).\n")
 
     while True:
         print("What would you like to do?")
@@ -672,11 +796,11 @@ def wizard(input_fn=input):
         choice = _ask("> ", input_fn)
 
         if choice == "1":
-            list_sessions(files)
+            list_sessions(files, source=source)
         elif choice == "2":
-            list_sessions(files)
+            list_sessions(files, source=source)
             if _confirm(f"\nImport all {len(files)} session(s)?", input_fn):
-                ok = _import_batch(files)
+                ok = _import_batch(files, source=source)
                 print(f"\nDone: {ok} session(s) imported. "
                       f"Restart Kimi Code to see them.")
                 print("Changed your mind? Run: python3 claude2kimi.py --undo")
@@ -684,10 +808,10 @@ def wizard(input_fn=input):
             sub = _ask("Project name or path fragment: ", input_fn)
             if not sub:
                 continue
-            rows = list_sessions(files, project=sub)
+            rows = list_sessions(files, project=sub, source=source)
             if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
                                  input_fn):
-                ok = _import_batch(files, project=sub)
+                ok = _import_batch(files, project=sub, source=source)
                 print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
         elif choice == "4":
             date = _ask("Only sessions active on/after (YYYY-MM-DD): ", input_fn)
@@ -696,15 +820,15 @@ def wizard(input_fn=input):
             except ValueError:
                 print("Expected a date like 2026-10-01.")
                 continue
-            rows = list_sessions(files, since_ms=since)
+            rows = list_sessions(files, since_ms=since, source=source)
             if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
                                  input_fn):
-                ok = _import_batch(files, since_ms=since)
+                ok = _import_batch(files, since_ms=since, source=source)
                 print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
         elif choice == "5":
             outdir = _ask("Output folder [./claude-export]: ", input_fn) \
                 or "./claude-export"
-            export_markdown(files, outdir)
+            export_markdown(files, outdir, source=source)
         elif choice == "6":
             migrate_config(dry_run=True)
             if _confirm("\nApply these changes?", input_fn):
@@ -738,6 +862,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("files", nargs="*")
+    p.add_argument("--from", dest="source", default="claude",
+                   choices=["claude", "codex"],
+                   help="source agent (default: claude)")
     p.add_argument("--all", action="store_true",
                    help="import every session under ~/.claude/projects")
     p.add_argument("--claude-dir", action="append", metavar="DIR",
@@ -799,7 +926,7 @@ def main():
 
     files = list(a.files)
     if a.all:
-        files += discover_sessions(a.claude_dir)
+        files += discover_sessions(a.claude_dir, a.source)
     if not files:
         p.error("no sessions found — pass .jsonl files, or --all "
                 "(optionally with --claude-dir DIR)")
@@ -807,11 +934,11 @@ def main():
         print(f"Found {len(files)} Claude session file(s).")
 
     if a.list:
-        list_sessions(files, since_ms, a.project)
+        list_sessions(files, since_ms, a.project, a.source)
         return
     if a.to_md:
         export_markdown(files, a.to_md, a.with_tools, a.with_thinking,
-                        since_ms, a.project)
+                        since_ms, a.project, a.source)
         return
 
     proto = detect_protocol()
@@ -841,6 +968,7 @@ def main():
             convert(f, a.workspace, a.dry_run, a.with_tools,
                     with_thinking=a.with_thinking, since_ms=since_ms,
                     project=a.project, rewrite_rules=rewrite_rules,
+                    source=a.source,
                     skip_existing=not a.force, imported=imported, report=report)
         except Exception as e:  # keep batch going, record for the report
             print(f"ERROR {f}: {e}", file=sys.stderr)

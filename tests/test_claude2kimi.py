@@ -322,14 +322,14 @@ def run_wizard(monkeypatch, answers):
 
 def test_wizard_quit(kimi, monkeypatch, capsys):
     monkeypatch.setattr(c2k, "discover_sessions", lambda *a, **k: [])
-    run_wizard(monkeypatch, [])
-    assert "No Claude sessions found" in capsys.readouterr().out
+    run_wizard(monkeypatch, ["1"])
+    assert "No claude sessions found" in capsys.readouterr().out
 
 
 def test_wizard_list_then_quit(kimi, session_file, monkeypatch, capsys):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["1", "0"])
+    run_wizard(monkeypatch, ["1", "1", "0"])
     out = capsys.readouterr().out
     assert "Test session" in out and "Bye!" in out
     # nothing imported
@@ -339,7 +339,7 @@ def test_wizard_list_then_quit(kimi, session_file, monkeypatch, capsys):
 def test_wizard_import_all(kimi, session_file, monkeypatch, capsys):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["2", "y", "0"])
+    run_wizard(monkeypatch, ["1", "2", "y", "0"])
     out = capsys.readouterr().out
     assert "1 session(s) imported" in out
     assert len(list((kimi / "sessions").glob("*/*/state.json"))) == 1
@@ -348,7 +348,7 @@ def test_wizard_import_all(kimi, session_file, monkeypatch, capsys):
 def test_wizard_import_declined(kimi, session_file, monkeypatch):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["2", "n", "0"])
+    run_wizard(monkeypatch, ["1", "2", "n", "0"])
     assert not list((kimi / "sessions").glob("*/*/state.json"))
 
 
@@ -364,3 +364,75 @@ def test_discover_by_content(tmp_path, monkeypatch, session_file):
     found = c2k.discover_sessions()
     assert any(f.endswith("a.jsonl") for f in found)
     assert not any("junk" in f for f in found)
+
+
+# ------------------------------------------------------------------ codex
+
+@pytest.fixture()
+def codex_file(tmp_path):
+    f = tmp_path / "rollout-2026-11-17T10-00-00-abc.jsonl"
+    lines = [
+        {"timestamp": "2026-11-17T10:00:00.000Z", "ordinal": 0,
+         "type": "session_meta",
+         "payload": {"id": "abc", "cwd": "/work/codex-proj",
+                     "timestamp": "2026-11-17T10:00:00.000Z",
+                     "originator": "Codex CLI"}},
+        {"timestamp": "2026-11-17T10:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": "Fix the login bug"}]}},
+        {"timestamp": "2026-11-17T10:00:02.000Z", "type": "response_item",
+         "payload": {"type": "reasoning", "summary": [],
+                     "encrypted_content": "gAAAAAB..."}},
+        {"timestamp": "2026-11-17T10:00:03.000Z", "type": "event_msg",
+         "payload": {"type": "item_completed", "item": {"type": "UserMessage"}}},
+        {"timestamp": "2026-11-17T10:00:04.000Z", "type": "response_item",
+         "payload": {"type": "custom_tool_call", "name": "exec",
+                     "input": "ls -la"}},
+        {"timestamp": "2026-11-17T10:00:05.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "content": [
+             {"type": "output_text", "text": "Fixed it."}]}},
+        {"timestamp": "2026-11-17T10:00:06.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "developer", "content": [
+             {"type": "input_text", "text": "internal"}]}},
+    ]
+    f.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    return f
+
+
+def test_extract_codex(codex_file):
+    msgs, title, cwd, stats = c2k.extract_codex(codex_file)
+    assert cwd == "/work/codex-proj"
+    roles = [m[0] for m in msgs]
+    assert roles == ["user", "assistant"]  # developer + events skipped
+    assert msgs[0][1] == "Fix the login bug"
+    assert msgs[1][1] == "Fixed it."
+
+
+def test_extract_codex_with_tools(codex_file):
+    msgs, _, _, stats = c2k.extract_codex(codex_file, with_tools=True)
+    texts = [m[1] for m in msgs]
+    assert any("[tool call: exec]" in t for t in texts)
+    assert stats["tool_blocks"] == 1
+
+
+def test_convert_codex(kimi, codex_file):
+    sid = c2k.convert(str(codex_file), source="codex", skip_existing=False)
+    state = json.loads(next((kimi / "sessions").glob(f"*/{sid}/state.json"))
+                       .read_text(encoding="utf-8"))
+    assert state["custom"]["importedFrom"] == "codex"
+    assert state["title"] == "Fix the login bug"
+    wire = read_wire(kimi, sid)
+    assert [e["type"] for e in wire].count("agent.message.appended") == 2
+
+
+def test_undo_removes_codex_too(kimi, codex_file):
+    sid = c2k.convert(str(codex_file), source="codex", skip_existing=False)
+    c2k.undo()
+    assert not list((kimi / "sessions").glob(f"*/{sid}"))
+
+
+def test_looks_like_codex(codex_file, tmp_path):
+    assert c2k.looks_like_codex_session(codex_file)
+    junk = tmp_path / "junk.jsonl"
+    junk.write_text('{"foo":1}\n', encoding="utf-8")
+    assert not c2k.looks_like_codex_session(junk)

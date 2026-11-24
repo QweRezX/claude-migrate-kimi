@@ -45,6 +45,7 @@ All flags below are appended to `python3 claude2kimi.py`
 
 | I want to… | Run |
 |---|---|
+| Migrate from **Codex** (CLI/Desktop) | `--from codex --all` |
 | Just look at what would be imported | `--all --list` |
 | Import everything | `--all` |
 | Try one session first (recommended) | `<path to one .jsonl from --list>` |
@@ -95,7 +96,8 @@ flowchart LR
     B -.->|"--undo"| D["remove exactly<br>what was imported"]
 ```
 
-- **Source:** Claude Code stores sessions as JSONL under `~/.claude/projects/`.
+- **Sources:** Claude Code (`~/.claude/projects/`) and Codex CLI/Desktop (`~/.codex/sessions/`, via `--from codex`). Codex reasoning blocks are encrypted by OpenAI and cannot be imported; `.zst` archives are skipped for now.
+- **Source (Claude):** sessions live as JSONL under `~/.claude/projects/`.
   Discovery is by content, not folder name — `$CLAUDE_CONFIG_DIR` is honored,
   and any custom location can be added with `--claude-dir /path`.
 - **Target:** each conversation is recreated as a native Kimi Code session
