@@ -4,128 +4,131 @@
 [![release](https://img.shields.io/github/v/release/QweRezX/claude-migrate-kimi)](https://github.com/QweRezX/claude-migrate-kimi/releases/latest)
 [![license](https://img.shields.io/github/license/QweRezX/claude-migrate-kimi)](LICENSE)
 
-Import your **Claude Code** chat history into **Kimi Code** as native sessions —
-they appear in the session picker with original titles and dates and open as
-readable conversations. A Kimi Code skill + standalone CLI, no dependencies.
+**Moving from Claude Code to Kimi Code? Bring your chats with you.**
+One Python file, no dependencies — your Claude conversations reappear in the
+Kimi Code session picker with their original titles and dates, readable like
+native sessions.
 
-Built after switching from Claude Code and finding 15 sessions of work context
-stuck in `~/.claude/projects/`. Inspired by ChatGPT desktop's one-click
-"Import from Claude".
+```mermaid
+flowchart LR
+    subgraph before["What you have"]
+        A["~/.claude/<br>chat history (JSONL)<br>skills · CLAUDE.md · MCP"]
+    end
+    subgraph tool["claude2kimi.py"]
+        B["reads → converts → writes<br><i>never modifies the source</i>"]
+    end
+    subgraph after["What you get"]
+        C["~/.kimi-code/<br>sessions in the picker<br>skills · AGENTS.md · mcp.json"]
+    end
+    A --> B --> C
+    B -.->|"--undo"| D["remove exactly<br>what was imported"]
+```
 
-## What it does
+## 60-second quickstart
 
-- Reads Claude Code's local session files — no web export, no API, everything
-  is already on your disk. Discovery is by content, not folder name: the
-  default `~/.claude` is searched, `$CLAUDE_CONFIG_DIR` is honored, and any
-  custom location can be added with `--claude-dir /path/to/folder`.
-- Recreates each conversation as a native Kimi Code session
-  (`state.json` + `wire.jsonl`, wire protocol 1.5).
-- Maps sessions to Kimi workspaces by their original working directory.
-- Keeps dialogue only by default (clean chat); `--with-tools` includes tool
-  calls and results.
-- Idempotent: already-imported sessions are skipped. Fully reversible: `--undo`
-  removes exactly what was imported and nothing else.
+You need Python 3.10+ (macOS/Linux already have it; on Windows get it from
+[python.org](https://www.python.org/downloads/)).
 
-## Install
+```bash
+# 1. Download the tool (one file)
+curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-**Grab the latest release:** [github.com/QweRezX/claude-migrate-kimi/releases/latest](https://github.com/QweRezX/claude-migrate-kimi/releases/latest) —
-download `claude2kimi-v*.zip` from Assets, unzip, done. No git, no dependencies.
+# 2. See what it found — nothing is written yet
+python3 claude2kimi.py --all --list
 
-**Option A — just the script.** One file, always current:
+# 3. Import everything
+python3 claude2kimi.py --all
+```
 
-- Browser: [claude2kimi.py (raw)](https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py) → save anywhere
-- Or terminal:
-  ```bash
-  curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
-  python3 claude2kimi.py --all --dry-run
-  ```
+Restart Kimi Code — your Claude sessions are in the picker. Something wrong?
+`python3 claude2kimi.py --undo` puts everything back.
 
-**Option B — ZIP, no git.** [Download ZIP](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip),
-unzip anywhere. To install as a Kimi Code skill, unzip into
-`~/.kimi-code/skills/claude-migrate/`.
+> No terminal skills? Download
+> [`claude2kimi-v*.zip` from the latest release](https://github.com/QweRezX/claude-migrate-kimi/releases/latest),
+> unzip, and run the same commands in that folder.
 
-**Option C — git clone** (for a skill install that you can `git pull` to update):
+## Pick your scenario
+
+| I want to… | Run |
+|---|---|
+| Just look at what would be imported | `--all --list` |
+| Import everything | `--all` |
+| Try one session first (recommended) | `<path to one .jsonl from --list>` |
+| Import only one project's chats | `--all --project waiterhelper` |
+| Import only recent chats | `--all --since 2026-10-01` |
+| Keep the assistant's thinking blocks too | `--all --with-thinking` |
+| Keep tool calls/results too | `--all --with-tools` |
+| Move skills, CLAUDE.md and MCP servers as well | `--config` |
+| Read chats without Kimi (e.g. share as text) | `--all --to-md ./export` |
+| Project moved to a new path/machine | `--all --rewrite-cwd /old/path=/new/path` |
+| Undo the whole import | `--undo` |
+| Report a problem | add `--report report.json` and [send it](FEEDBACK.md) |
+
+Run `python3 claude2kimi.py --help` for the full flag reference.
+
+## Install as a Kimi Code skill
+
+Prefer asking instead of typing commands? Install the repo as a skill and just
+tell Kimi Code: *"import my Claude Code sessions"*.
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
 ```
 
-With the skill installed, just ask Kimi Code: *"import my Claude Code sessions"*.
-With options A/B, run the script directly:
+(or unzip [the repo archive](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip)
+into `~/.kimi-code/skills/claude-migrate/`)
 
-## CLI usage
+## How it works
 
-```bash
-python scripts/claude2kimi.py --all --dry-run     # preview
-python scripts/claude2kimi.py <session.jsonl>     # pilot: import one session
-python scripts/claude2kimi.py --all               # import everything
-python scripts/claude2kimi.py --undo              # roll back
-```
+- **Source:** Claude Code stores sessions as JSONL under `~/.claude/projects/`.
+  Discovery is by content, not folder name — `$CLAUDE_CONFIG_DIR` is honored,
+  and any custom location can be added with `--claude-dir /path`.
+- **Target:** each conversation is recreated as a native Kimi Code session
+  (`state.json` + `wire.jsonl`, wire protocol 1.5) and mapped to a Kimi
+  workspace by its original working directory.
+- **Idempotent:** already-imported sessions are skipped (`--force` re-imports).
+- **Tagged & reversible:** every imported session carries
+  `custom.importedFrom: "claude-code"` — `--undo` removes exactly those and
+  nothing else.
 
-Restart Kimi Code after importing so it re-reads the session index.
+## Safety
 
-| Flag | Effect |
-|---|---|
-| `--all` | import every session found (see below) |
-| `--claude-dir DIR` | extra folder to search for sessions (repeatable; `$CLAUDE_CONFIG_DIR` is honored automatically) |
-| `--dry-run` | print what would happen, write nothing |
-| `--with-tools` | include tool calls/results as text |
-| `--with-thinking` | include assistant thinking blocks (collapsible in the UI) |
-| `--since YYYY-MM-DD` | only sessions with activity on or after this date |
-| `--project SUBSTR` | only sessions whose working directory contains SUBSTR |
-| `--list` | show a table of discovered sessions and exit |
-| `--to-md DIR` | export sessions as readable Markdown instead of importing |
-| `--rewrite-cwd OLD=NEW` | retarget working-directory prefixes (repeatable) — for moved projects/machines |
-| `--config` | migrate configuration instead of sessions: copy skills, `CLAUDE.md` → `AGENTS.md` (global and per workspace), map MCP servers from `~/.claude.json` into `mcp.json`. Never overwrites existing files |
-| `--workspace ID` | force a target workspace (`wm_...`) |
-| `--force` | re-import sessions already imported |
-| `--undo` | delete previously imported sessions (supports `--dry-run`) |
-| `--report FILE` | write a diagnostics JSON (no message text) for bug reports |
+- Only **adds** files; existing sessions and configs are never modified or
+  overwritten (`--config` skips anything that already exists).
+- `session_index.jsonl` is backed up to `session_index.jsonl.bak` before each batch.
 
 ## Platform support
 
 Works on **Windows, macOS and Linux** — pure `pathlib`, no shell calls, no
-dependencies beyond Python 3.10+. Data locations per platform:
+dependencies beyond Python 3.10+. Tested in CI on all three OSes × Python
+3.10/3.12 against wire protocol 1.5.
 
 | | Windows | macOS / Linux |
 |---|---|---|
 | Kimi Code data | `C:\Users\<name>\.kimi-code` | `~/.kimi-code` |
 | Claude Code sessions | `C:\Users\<name>\.claude\projects` | `~/.claude/projects` |
 
-Both respect overrides: `KIMI_CODE_HOME` is honored for the Kimi side.
-Developed and verified on Windows against wire protocol 1.5 — **macOS/Linux
-testers welcome**, see Feedback below; the code paths are shared, so any
-platform-specific quirk is likely a small fix.
+`KIMI_CODE_HOME` is honored for the Kimi side.
 
 ## Feedback & known limitations
 
 The Kimi wire format is **undocumented** and may change between releases —
-verified against `protocol_version: 1.5`. The import is a faithful *readable*
-copy, not a byte-exact replica: thinking blocks, tool transcripts (by default),
-and attachments are not rendered the way live sessions render them, and
-imported sessions are meant for reading/reference, not for resuming mid-task.
+verified against `protocol_version: 1.5` (the tool warns you if it detects a
+different one). The import is a faithful *readable* copy, not a byte-exact
+replica: attachments are not carried over, and imported sessions are meant for
+reading/reference, not for resuming mid-task.
 
-Found a rendering glitch or a session that didn't come over? Run with
-`--report report.json` and send it over per [FEEDBACK.md](FEEDBACK.md)
-(or [open an issue](../../issues) once the repo is public) — the report
+Found a glitch? Run with `--report report.json` and share it per
+[FEEDBACK.md](FEEDBACK.md) or [open an issue](../../issues) — the report
 contains versions, counts and skipped event types, never your message text.
 Format notes for contributors: [references/formats.md](references/formats.md).
 
-## Safety
-
-- Only **adds** files; existing sessions and configs are never modified.
-- `session_index.jsonl` is backed up to `session_index.jsonl.bak` before each batch.
-- Everything imported is tagged (`custom.importedFrom: "claude-code"`) and
-  removable with one command.
-
 ## Roadmap
 
-Ideas borrowed from neighboring tools (see below), roughly in priority order:
-
-- [x] `--list` — table of discovered sessions (date, project, message count) before importing
+- [x] `--list` — table of discovered sessions before importing
 - [x] `--to-md` — export sessions to readable Markdown, no Kimi required
-- [x] `--rewrite-cwd OLD=NEW` — retarget absolute paths when moving to a machine with a different layout
-- [x] `--config` — full-move mode: copy skills, convert `CLAUDE.md` → `AGENTS.md`, map MCP server configs
+- [x] `--rewrite-cwd OLD=NEW` — retarget absolute paths on moved projects/machines
+- [x] `--config` — full-move mode: skills, `CLAUDE.md` → `AGENTS.md`, MCP configs
 - [ ] reverse export (Kimi Code → Claude Code)
 
 Contributions welcome — open an issue to discuss before large PRs.
