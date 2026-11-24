@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 860, 620
+W, H = 860, 760
 BG = "#0d1117"
 PANEL = "#161b22"
 FG = "#c9d1d9"
@@ -45,9 +45,16 @@ FB = font(FONT_SIZE + 1)
 # ("agent", text)     — plain agent line
 # ("tool", [lines])   — terminal-style block
 SCRIPT = [
-    ("user", "Import my Claude Code sessions"),
-    ("agent", "I'll use the claude-migrate skill. Checking what you have..."),
-    ("tool", ["$ python3 claude2kimi.py --all --list",
+    ("user", "Install the claude-migrate skill from "
+             "github.com/QweRezX/claude-migrate-kimi and import my "
+             "Claude Code sessions"),
+    ("agent", "I'll install the skill, then import your sessions."),
+    ("tool", ["$ git clone https://github.com/QweRezX/claude-migrate-kimi \\",
+              "    ~/.kimi-code/skills/claude-migrate",
+              "Cloning into 'claude-migrate'... done."]),
+    ("agent", "Skill installed. Checking your Claude sessions..."),
+    ("tool", ["$ python3 ~/.kimi-code/skills/claude-migrate/scripts/"
+              "claude2kimi.py --all --list",
               "DATE       MSGS  PROJECT        TITLE",
               "2026-11-02   18  ~/dev/my-app   Fix login redirect loop",
               "2026-11-09   42  ~/dev/blog     Add RSS feed",
@@ -55,12 +62,13 @@ SCRIPT = [
               "3 session(s)."]),
     ("agent", "Found 3 sessions (dry run — nothing written yet). Import all?"),
     ("user", "yes, everything"),
-    ("tool", ["$ python3 claude2kimi.py --all",
+    ("tool", ["$ python3 .../claude2kimi.py --all",
               "OK  Fix login redirect loop (18 msgs)",
               "OK  Add RSS feed (42 msgs)",
               "OK  Refactor auth middleware (7 msgs)"]),
-    ("agent", "Done — 3 sessions imported. Restart Kimi Code and they'll "
-              "be in your session picker. Undo anytime with --undo."),
+    ("agent", "Done — sessions imported, and the skill stays installed: next "
+              "time just ask. Restart Kimi Code to see your chats; undo "
+              "anytime with --undo."),
 ]
 
 

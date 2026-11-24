@@ -78,7 +78,7 @@ python3 claude2kimi.py
 Предпочитаете просто попросить? Установите репозиторий как скилл и скажите
 Kimi Code: *«импортируй мои сессии из Claude»*.
 
-![Одна просьба внутри Kimi Code делает весь импорт](docs/skill-demo.gif)
+![Одна просьба: агент ставит скилл и импортирует всё](docs/skill-demo.gif)
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate

@@ -78,7 +78,7 @@ flag — examples, combinations and safety notes.
 Prefer asking instead of typing commands? Install the repo as a skill and just
 tell Kimi Code: *"import my Claude Code sessions"*.
 
-![One request inside Kimi Code does the whole import](docs/skill-demo.gif)
+![One request: the agent installs the skill and imports everything](docs/skill-demo.gif)
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
