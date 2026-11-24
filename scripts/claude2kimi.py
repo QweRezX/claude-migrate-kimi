@@ -20,6 +20,7 @@ Options:
     --with-thinking include assistant thinking blocks
     --since DATE   only sessions active on or after YYYY-MM-DD
     --project STR  only sessions whose working directory contains STR
+    --config       migrate skills, CLAUDE.md -> AGENTS.md and MCP servers
     --list         show discovered sessions and exit
     --to-md DIR    export sessions as Markdown files instead of importing
     --rewrite-cwd OLD=NEW  retarget working-directory prefixes (repeatable)
@@ -41,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -440,6 +441,154 @@ def export_markdown(files, outdir, with_tools=False, with_thinking=False,
     return written
 
 
+# ---------------------------------------------------------- config migration
+
+def _copy_file(src, dst, dry_run, actions, kind):
+    if dst.exists():
+        actions.append({"kind": kind, "action": "skip_exists", "path": str(dst)})
+        print(f"SKIP {kind}: {dst} already exists")
+        return False
+    actions.append({"kind": kind, "action": "copy", "from": str(src), "to": str(dst)})
+    print(f"{'DRY would copy' if dry_run else 'Copying'} {kind}: {src} -> {dst}")
+    if not dry_run:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    return True
+
+
+def map_mcp_server(cfg):
+    """Translate one Claude MCP server entry to Kimi mcp.json shape."""
+    out = {}
+    if cfg.get("command"):
+        out["command"] = cfg["command"]
+        for k in ("args", "env", "cwd"):
+            if cfg.get(k):
+                out[k] = cfg[k]
+    elif cfg.get("url"):
+        out["url"] = cfg["url"]
+        if (cfg.get("type") or cfg.get("transport")) == "sse":
+            out["transport"] = "sse"
+        if cfg.get("headers"):
+            out["headers"] = cfg["headers"]
+    else:
+        return None  # unknown shape
+    for k in ("enabledTools", "disabledTools"):
+        if cfg.get(k):
+            out[k] = cfg[k]
+    return out
+
+
+def _merge_mcp(claude_servers, target_file, dry_run, actions, scope):
+    mapped = {}
+    for name, cfg in (claude_servers or {}).items():
+        m = map_mcp_server(cfg if isinstance(cfg, dict) else {})
+        if m:
+            mapped[name] = m
+        else:
+            actions.append({"kind": "mcp", "action": "skip_unknown",
+                            "server": name, "scope": scope})
+            print(f"SKIP mcp server {name!r} ({scope}): unrecognized config shape")
+    if not mapped:
+        return
+    existing = {"mcpServers": {}}
+    if target_file.exists():
+        try:
+            existing = json.loads(target_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            actions.append({"kind": "mcp", "action": "skip_bad_json",
+                            "path": str(target_file)})
+            print(f"SKIP mcp: {target_file} is not valid JSON, not touching it")
+            return
+    servers = existing.setdefault("mcpServers", {})
+    added = []
+    for name, m in mapped.items():
+        if name in servers:
+            actions.append({"kind": "mcp", "action": "skip_exists",
+                            "server": name, "scope": scope})
+            print(f"SKIP mcp server {name!r} ({scope}): already configured")
+            continue
+        servers[name] = m
+        added.append(name)
+        actions.append({"kind": "mcp", "action": "add", "server": name,
+                        "scope": scope, "to": str(target_file)})
+    if added:
+        print(f"{'DRY would add' if dry_run else 'Adding'} mcp server(s) "
+              f"{', '.join(added)} -> {target_file}")
+        if not dry_run:
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2),
+                                   encoding="utf-8")
+
+
+def migrate_config(dry_run=False, claude_home=None, report=None):
+    """Migrate skills, CLAUDE.md instructions and MCP servers (never overwrites)."""
+    claude_home = Path(claude_home) if claude_home else Path.home() / ".claude"
+    actions = []
+
+    # 1. Skills: ~/.claude/skills/<name>/ -> <kimi>/skills/<name>/
+    src_skills = claude_home / "skills"
+    if src_skills.is_dir():
+        for skill in sorted(p for p in src_skills.iterdir() if p.is_dir()):
+            dst = kimi_home() / "skills" / skill.name
+            if dst.exists():
+                actions.append({"kind": "skill", "action": "skip_exists",
+                                "path": str(dst)})
+                print(f"SKIP skill {skill.name!r}: already installed")
+                continue
+            actions.append({"kind": "skill", "action": "copy",
+                            "from": str(skill), "to": str(dst)})
+            print(f"{'DRY would copy' if dry_run else 'Copying'} skill: "
+                  f"{skill.name}")
+            if not dry_run:
+                shutil.copytree(skill, dst)
+
+    # 2. Instructions: global and per-workspace CLAUDE.md -> AGENTS.md
+    gsrc = claude_home / "CLAUDE.md"
+    if gsrc.is_file():
+        _copy_file(gsrc, kimi_home() / "AGENTS.md", dry_run, actions,
+                   "instructions (global)")
+    for wid, info in load_projects().items():
+        root = Path(info.get("root", ""))
+        c = root / "CLAUDE.md"
+        if c.is_file():
+            _copy_file(c, root / "AGENTS.md", dry_run, actions,
+                       f"instructions ({root})")
+
+    # 3. MCP servers: ~/.claude.json (global + per-project)
+    cjson = claude_home.parent / ".claude.json"
+    if cjson.is_file():
+        try:
+            data = json.loads(cjson.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+            actions.append({"kind": "mcp", "action": "skip_bad_json",
+                            "path": str(cjson)})
+        _merge_mcp(data.get("mcpServers"), kimi_home() / "mcp.json",
+                   dry_run, actions, "user")
+        roots = {info.get("root", "").lower(): info.get("root", "")
+                 for info in load_projects().values()}
+        for proj_path, pcfg in (data.get("projects") or {}).items():
+            servers = (pcfg or {}).get("mcpServers")
+            if not servers:
+                continue
+            root = roots.get(proj_path.lower())
+            if not root:
+                actions.append({"kind": "mcp", "action": "skip_no_workspace",
+                                "project": proj_path})
+                print(f"SKIP project mcp for {proj_path!r}: no matching Kimi "
+                      f"workspace")
+                continue
+            _merge_mcp(servers, Path(root) / ".kimi-code" / "mcp.json",
+                       dry_run, actions, f"project {root}")
+
+    if not actions:
+        print("Nothing to migrate: no Claude skills, CLAUDE.md files or "
+              "MCP servers found.")
+    if report is not None:
+        report["config"] = actions
+    return actions
+
+
 def undo(dry_run=False):
     removed = []
     sessions_root = kimi_home() / "sessions"
@@ -499,6 +648,9 @@ def main():
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--undo", action="store_true")
+    p.add_argument("--config", action="store_true",
+                   help="migrate configuration instead of sessions: skills, "
+                        "CLAUDE.md -> AGENTS.md, MCP servers (never overwrites)")
     p.add_argument("--list", action="store_true",
                    help="list discovered sessions (date, project, messages) and exit")
     p.add_argument("--to-md", metavar="OUTDIR",
@@ -525,6 +677,17 @@ def main():
 
     if a.undo:
         undo(a.dry_run)
+        return
+    if a.config:
+        report = {"tool": f"claude2kimi/{VERSION}",
+                  "time": iso_of(int(time.time() * 1000)),
+                  "kimi_home": str(kimi_home()), "dry_run": a.dry_run,
+                  "config": []} if a.report else None
+        migrate_config(a.dry_run, report=report)
+        if report is not None:
+            Path(a.report).write_text(json.dumps(report, ensure_ascii=False,
+                                                 indent=2), encoding="utf-8")
+            print(f"Report written to {a.report}")
         return
 
     files = list(a.files)

@@ -53,6 +53,12 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
    assistant thinking blocks (rendered as collapsible think parts).
 4. **Verify:** count imported sessions:
    `grep -l importedFrom ~/.kimi-code/sessions/*/*/state.json | wc -l`
+5. **Configuration (optional):** `--config --dry-run`, then `--config` —
+   copies `~/.claude/skills/*` into the Kimi skills dir, converts `CLAUDE.md`
+   to `AGENTS.md` (global and per managed workspace), and maps MCP servers
+   from `~/.claude.json` into `mcp.json` (user level and per workspace).
+   Existing files are never overwritten; OAuth-based MCP servers need a fresh
+   `/mcp-config login` afterwards.
 
 ## Behavior details
 

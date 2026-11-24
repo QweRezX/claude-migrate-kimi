@@ -73,6 +73,10 @@ Restart Kimi Code after importing so it re-reads the session index.
 | `--with-thinking` | include assistant thinking blocks (collapsible in the UI) |
 | `--since YYYY-MM-DD` | only sessions with activity on or after this date |
 | `--project SUBSTR` | only sessions whose working directory contains SUBSTR |
+| `--list` | show a table of discovered sessions and exit |
+| `--to-md DIR` | export sessions as readable Markdown instead of importing |
+| `--rewrite-cwd OLD=NEW` | retarget working-directory prefixes (repeatable) — for moved projects/machines |
+| `--config` | migrate configuration instead of sessions: copy skills, `CLAUDE.md` → `AGENTS.md` (global and per workspace), map MCP servers from `~/.claude.json` into `mcp.json`. Never overwrites existing files |
 | `--workspace ID` | force a target workspace (`wm_...`) |
 | `--force` | re-import sessions already imported |
 | `--undo` | delete previously imported sessions (supports `--dry-run`) |
@@ -118,10 +122,10 @@ Format notes for contributors: [references/formats.md](references/formats.md).
 
 Ideas borrowed from neighboring tools (see below), roughly in priority order:
 
-- [ ] `--list` — table of discovered sessions (date, project, message count) before importing
-- [ ] `--to-md` — export sessions to readable Markdown, no Kimi required
-- [ ] `--rewrite-cwd OLD=NEW` — retarget absolute paths when moving to a machine with a different layout
-- [ ] `--config` — full-move mode: copy skills, convert `CLAUDE.md` → `AGENTS.md`, map MCP server configs
+- [x] `--list` — table of discovered sessions (date, project, message count) before importing
+- [x] `--to-md` — export sessions to readable Markdown, no Kimi required
+- [x] `--rewrite-cwd OLD=NEW` — retarget absolute paths when moving to a machine with a different layout
+- [x] `--config` — full-move mode: copy skills, convert `CLAUDE.md` → `AGENTS.md`, map MCP server configs
 - [ ] reverse export (Kimi Code → Claude Code)
 
 Contributions welcome — open an issue to discuss before large PRs.
