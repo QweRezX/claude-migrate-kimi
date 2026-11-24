@@ -1,5 +1,9 @@
 # claude-migrate
 
+[![tests](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml/badge.svg)](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml)
+[![release](https://img.shields.io/github/v/release/QweRezX/claude-migrate-kimi)](https://github.com/QweRezX/claude-migrate-kimi/releases/latest)
+[![license](https://img.shields.io/github/license/QweRezX/claude-migrate-kimi)](LICENSE)
+
 Import your **Claude Code** chat history into **Kimi Code** as native sessions —
 they appear in the session picker with original titles and dates and open as
 readable conversations. A Kimi Code skill + standalone CLI, no dependencies.
