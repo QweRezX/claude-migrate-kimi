@@ -68,17 +68,27 @@ python3 claude2kimi.py
 
 *Скилл* — это папка с инструкциями, которую Kimi Code подхватывает
 автоматически: установив её, вы сможете не запускать скрипт руками, а просто
-попросить агента: *«импортируй мои сессии из Claude»* — он сам всё сделает
-и спросит, что именно вам нужно.
+попросить агента — он сам всё сделает и спросит, что именно вам нужно.
 
 ![Одна просьба: агент ставит скилл и импортирует всё](docs/skill-demo.gif)
+
+**Вариант 1 — просто попросите Kimi Code** (скопируйте и вставьте в чат):
+
+```text
+Установи скилл claude-migrate из github.com/QweRezX/claude-migrate-kimi
+и импортируй мои сессии из Claude Code (или Codex). Сначала покажи, что
+нашёл, и спроси, что именно импортировать.
+```
+
+**Вариант 2 — установите вручную:**
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
 ```
 
 (или распакуйте [архив репозитория](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip)
-в `~/.kimi-code/skills/claude-migrate/`)
+в `~/.kimi-code/skills/claude-migrate/`) — затем просто напишите агенту:
+*«импортируй мои сессии из Claude»*.
 
 ## Как это работает
 

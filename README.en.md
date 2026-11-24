@@ -66,18 +66,28 @@ flag — examples, combinations and safety notes.
 ## Install as a Kimi Code skill
 
 A *skill* is a folder of instructions Kimi Code picks up automatically: with
-it installed you don't run the script yourself — just tell the agent
-*"import my Claude Code sessions"* and it will do everything, asking what
-exactly you need first.
+it installed you don't run the script yourself — just ask the agent, and it
+will do everything, asking what exactly you need first.
 
 ![One request: the agent installs the skill and imports everything](docs/skill-demo.gif)
+
+**Option 1 — just ask Kimi Code** (copy-paste into the chat):
+
+```text
+Install the claude-migrate skill from github.com/QweRezX/claude-migrate-kimi
+and import my Claude Code (or Codex) sessions. Show me what you find first
+and ask what exactly to import.
+```
+
+**Option 2 — install manually:**
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
 ```
 
 (or unzip [the repo archive](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip)
-into `~/.kimi-code/skills/claude-migrate/`)
+into `~/.kimi-code/skills/claude-migrate/`) — then just tell the agent:
+*"import my Claude Code sessions"*.
 
 ## How it works
 
