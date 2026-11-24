@@ -13,25 +13,12 @@ native sessions.
 
 ![claude2kimi demo: list, import, undo](docs/demo.gif)
 
-```mermaid
-flowchart LR
-    subgraph before["What you have"]
-        A["~/.claude/<br>chat history (JSONL)<br>skills · CLAUDE.md · MCP"]
-    end
-    subgraph tool["claude2kimi.py"]
-        B["reads → converts → writes<br><i>never modifies the source</i>"]
-    end
-    subgraph after["What you get"]
-        C["~/.kimi-code/<br>sessions in the picker<br>skills · AGENTS.md · mcp.json"]
-    end
-    A --> B --> C
-    B -.->|"--undo"| D["remove exactly<br>what was imported"]
-```
-
 ## 60-second quickstart
 
-You need Python 3.10+ (macOS/Linux already have it; on Windows get it from
-[python.org](https://www.python.org/downloads/)).
+**What you need:**
+- Python 3.10+ (macOS/Linux already have it; on Windows get it from [python.org](https://www.python.org/downloads/));
+- your Claude Code files on the same machine (Claude Code itself doesn't need to be running — the tool only reads files);
+- Kimi Code (only needed at the end, to see the result).
 
 ```bash
 # 1. Download the tool (one file)
@@ -41,18 +28,20 @@ curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scri
 python3 claude2kimi.py
 ```
 
-The wizard lists your sessions, imports all or just one project, exports to
-Markdown, migrates config, and can undo — no flags to memorize. Prefer flags?
-They all still work:
+The wizard lists what it found and asks what to import (everything, one
+project, recent only) — nothing is written without your confirmation.
 
-Restart Kimi Code — your Claude sessions are in the picker. Something wrong?
-`python3 claude2kimi.py --undo` puts everything back.
+**3. Restart Kimi Code** — your Claude sessions appear in the session picker.
+Something wrong? `python3 claude2kimi.py --undo` puts everything back.
 
 > No terminal skills? Download
 > [`claude2kimi-v*.zip` from the latest release](https://github.com/QweRezX/claude-migrate-kimi/releases/latest),
 > unzip, and run the same commands in that folder.
 
 ## Pick your scenario
+
+All flags below are appended to `python3 claude2kimi.py`
+(e.g. `python3 claude2kimi.py --all --list`).
 
 | I want to… | Run |
 |---|---|
@@ -75,8 +64,10 @@ flag — examples, combinations and safety notes.
 
 ## Install as a Kimi Code skill
 
-Prefer asking instead of typing commands? Install the repo as a skill and just
-tell Kimi Code: *"import my Claude Code sessions"*.
+A *skill* is a folder of instructions Kimi Code picks up automatically: with
+it installed you don't run the script yourself — just tell the agent
+*"import my Claude Code sessions"* and it will do everything, asking what
+exactly you need first.
 
 ![One request: the agent installs the skill and imports everything](docs/skill-demo.gif)
 
@@ -89,12 +80,28 @@ into `~/.kimi-code/skills/claude-migrate/`)
 
 ## How it works
 
+```mermaid
+flowchart LR
+    subgraph before["What you have"]
+        A["~/.claude/<br>chat history (JSONL)<br>skills · CLAUDE.md · MCP"]
+    end
+    subgraph tool["claude2kimi.py"]
+        B["reads → converts → writes<br><i>never modifies the source</i>"]
+    end
+    subgraph after["What you get"]
+        C["~/.kimi-code/<br>sessions in the picker<br>skills · AGENTS.md · mcp.json"]
+    end
+    A --> B --> C
+    B -.->|"--undo"| D["remove exactly<br>what was imported"]
+```
+
 - **Source:** Claude Code stores sessions as JSONL under `~/.claude/projects/`.
   Discovery is by content, not folder name — `$CLAUDE_CONFIG_DIR` is honored,
   and any custom location can be added with `--claude-dir /path`.
 - **Target:** each conversation is recreated as a native Kimi Code session
-  (`state.json` + `wire.jsonl`, wire protocol 1.5) and mapped to a Kimi
-  workspace by its original working directory.
+  (`state.json` + `wire.jsonl` — Kimi's internal event-log format, the
+  "wire protocol") and mapped to a *workspace* (a project in Kimi's sidebar)
+  by its original working directory.
 - **Idempotent:** already-imported sessions are skipped (`--force` re-imports).
 - **Tagged & reversible:** every imported session carries
   `custom.importedFrom: "claude-code"` — `--undo` removes exactly those and
