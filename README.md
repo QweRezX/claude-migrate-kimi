@@ -22,13 +22,29 @@ stuck in `~/.claude/projects/`. Inspired by ChatGPT desktop's one-click
 - Idempotent: already-imported sessions are skipped. Fully reversible: `--undo`
   removes exactly what was imported and nothing else.
 
-## Install as a Kimi Code skill
+## Install
+
+**Option A — just the script (simplest).** Download one file, no git needed:
+
+- Browser: [claude2kimi.py (raw)](https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py) → save anywhere
+- Or terminal:
+  ```bash
+  curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
+  python3 claude2kimi.py --all --dry-run
+  ```
+
+**Option B — ZIP, no git.** [Download ZIP](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip),
+unzip anywhere. To install as a Kimi Code skill, unzip into
+`~/.kimi-code/skills/claude-migrate/`.
+
+**Option C — git clone** (for a skill install that you can `git pull` to update):
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
 ```
 
-Then just ask: *"import my Claude Code sessions"*. Or use the script directly:
+With the skill installed, just ask Kimi Code: *"import my Claude Code sessions"*.
+With options A/B, run the script directly:
 
 ## CLI usage
 
