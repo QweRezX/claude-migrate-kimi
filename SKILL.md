@@ -35,9 +35,23 @@ chats (user/assistant dialogue; tool calls optional).
 
 Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
 
+0. **Interview the user first — always.** Never import silently. Run
+   `--all --list` (writes nothing), show the result, and explicitly ask the
+   user to choose — use the host's question/choice mechanism (e.g.
+   AskUserQuestion) when available:
+   - **Scope:** everything, or specific projects (offer the project list
+     from `--list` as options), or only recent sessions (`--since`)?
+   - **Content:** dialogue only (default), or also thinking blocks
+     (`--with-thinking`) and tool calls (`--with-tools`)?
+   - **Extras:** migrate configuration too (`--config`: skills, CLAUDE.md →
+     AGENTS.md, MCP)?
+   - **Destination quirks:** did any project move to a new path
+     (`--rewrite-cwd`)?
+   Summarize the chosen plan back to the user and get a final confirmation
+   before any writing run.
 1. **Preview first:**
-   `python scripts/claude2kimi.py --all --dry-run`
-   Check message counts and titles look sane.
+   `python scripts/claude2kimi.py --all --dry-run` (with the flags chosen
+   in step 0). Check message counts and titles look sane.
 2. **Pilot import:** import one representative session (pick a small one):
    `python scripts/claude2kimi.py <file.jsonl>`
    Ask the user to restart Kimi Code and open it. Three outcomes:

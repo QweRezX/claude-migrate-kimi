@@ -1,158 +1,162 @@
 # claude-migrate
 
-**English** | [Русский](README.ru.md)
+**Русский** | [English](README.en.md)
 
 [![tests](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml/badge.svg)](https://github.com/QweRezX/claude-migrate-kimi/actions/workflows/test.yml)
 [![release](https://img.shields.io/github/v/release/QweRezX/claude-migrate-kimi)](https://github.com/QweRezX/claude-migrate-kimi/releases/latest)
 [![license](https://img.shields.io/github/license/QweRezX/claude-migrate-kimi)](LICENSE)
 
-**Moving from Claude Code to Kimi Code? Bring your chats with you.**
-One Python file, no dependencies — your Claude conversations reappear in the
-Kimi Code session picker with their original titles and dates, readable like
-native sessions.
+**Переходите с Claude Code на Kimi Code? Заберите свои чаты с собой.**
+Один Python-файл без зависимостей — ваши разговоры из Claude появятся в
+списке сессий Kimi Code с оригинальными названиями и датами и откроются
+как обычные чаты.
 
-![claude2kimi demo: list, import, undo](docs/demo.gif)
+![Демо claude2kimi: список, импорт, откат](docs/demo.gif)
 
 ```mermaid
 flowchart LR
-    subgraph before["What you have"]
-        A["~/.claude/<br>chat history (JSONL)<br>skills · CLAUDE.md · MCP"]
+    subgraph before["Что у вас есть"]
+        A["~/.claude/<br>история чатов (JSONL)<br>скиллы · CLAUDE.md · MCP"]
     end
     subgraph tool["claude2kimi.py"]
-        B["reads → converts → writes<br><i>never modifies the source</i>"]
+        B["читает → конвертирует → пишет<br><i>источник не изменяется</i>"]
     end
-    subgraph after["What you get"]
-        C["~/.kimi-code/<br>sessions in the picker<br>skills · AGENTS.md · mcp.json"]
+    subgraph after["Что вы получаете"]
+        C["~/.kimi-code/<br>сессии в списке<br>скиллы · AGENTS.md · mcp.json"]
     end
     A --> B --> C
-    B -.->|"--undo"| D["remove exactly<br>what was imported"]
+    B -.->|"--undo"| D["удаляет ровно то,<br>что импортировал"]
 ```
 
-## 60-second quickstart
+## Быстрый старт за 60 секунд
 
-You need Python 3.10+ (macOS/Linux already have it; on Windows get it from
+Нужен Python 3.10+ (на macOS/Linux уже есть; на Windows — с
 [python.org](https://www.python.org/downloads/)).
 
 ```bash
-# 1. Download the tool (one file)
+# 1. Скачайте инструмент (один файл)
 curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-# 2. Run it — an interactive wizard walks you through everything
+# 2. Запустите — интерактивный мастер проведёт через всё сам
 python3 claude2kimi.py
 ```
 
-The wizard lists your sessions, imports all or just one project, exports to
-Markdown, migrates config, and can undo — no flags to memorize. Prefer flags?
-They all still work:
+Мастер покажет список сессий, импортирует все или один проект, экспортирует
+в Markdown, перенесёт конфигурацию и умеет откатывать — флаги запоминать не
+нужно. Все флаги при этом работают как обычно.
 
-Restart Kimi Code — your Claude sessions are in the picker. Something wrong?
-`python3 claude2kimi.py --undo` puts everything back.
+Перезапустите Kimi Code — сессии из Claude появятся в списке. Что-то не так?
+`python3 claude2kimi.py --undo` вернёт всё как было.
 
-> No terminal skills? Download
-> [`claude2kimi-v*.zip` from the latest release](https://github.com/QweRezX/claude-migrate-kimi/releases/latest),
-> unzip, and run the same commands in that folder.
+> Совсем не дружите с терминалом? Скачайте
+> [`claude2kimi-v*.zip` из последнего релиза](https://github.com/QweRezX/claude-migrate-kimi/releases/latest),
+> распакуйте и выполните те же команды в этой папке.
 
-## Pick your scenario
+## Выберите свой сценарий
 
-| I want to… | Run |
+| Я хочу… | Команда |
 |---|---|
-| Just look at what would be imported | `--all --list` |
-| Import everything | `--all` |
-| Try one session first (recommended) | `<path to one .jsonl from --list>` |
-| Import only one project's chats | `--all --project waiterhelper` |
-| Import only recent chats | `--all --since 2026-10-01` |
-| Keep the assistant's thinking blocks too | `--all --with-thinking` |
-| Keep tool calls/results too | `--all --with-tools` |
-| Move skills, CLAUDE.md and MCP servers as well | `--config` |
-| Read chats without Kimi (e.g. share as text) | `--all --to-md ./export` |
-| Project moved to a new path/machine | `--all --rewrite-cwd /old/path=/new/path` |
-| Undo the whole import | `--undo` |
-| Report a problem | add `--report report.json` and [send it](FEEDBACK.md) |
+| Просто посмотреть, что будет импортировано | `--all --list` |
+| Импортировать всё | `--all` |
+| Сначала попробовать одну сессию (рекомендуется) | `<путь к одному .jsonl из --list>` |
+| Импортировать чаты только одного проекта | `--all --project мойпроект` |
+| Импортировать только свежие чаты | `--all --since 2026-10-01` |
+| Сохранить и размышления ассистента | `--all --with-thinking` |
+| Сохранить и вызовы инструментов | `--all --with-tools` |
+| Перенести также скиллы, CLAUDE.md и MCP | `--config` |
+| Читать чаты без Kimi (например, поделиться) | `--all --to-md ./export` |
+| Проект переехал в другую папку/на другой ПК | `--all --rewrite-cwd /старый/путь=/новый/путь` |
+| Откатить весь импорт | `--undo` |
+| Сообщить о проблеме | добавьте `--report report.json` и [пришлите](FEEDBACK.md) |
 
-Run `python3 claude2kimi.py --help` for the built-in summary, or the
-[**full CLI reference**](docs/cli-reference.md) for detailed docs on every
-flag — examples, combinations and safety notes.
+Встроенная справка: `python3 claude2kimi.py --help`. Подробная документация
+по каждому флагу (примеры, сочетания, замечания по безопасности) —
+в [справочнике CLI](docs/cli-reference.md) (на английском).
 
-## Install as a Kimi Code skill
+## Установка как скилл Kimi Code
 
-Prefer asking instead of typing commands? Install the repo as a skill and just
-tell Kimi Code: *"import my Claude Code sessions"*.
+Предпочитаете просто попросить? Установите репозиторий как скилл и скажите
+Kimi Code: *«импортируй мои сессии из Claude»*.
 
-![One request: the agent installs the skill and imports everything](docs/skill-demo.gif)
+![Одна просьба: агент ставит скилл и импортирует всё](docs/skill-demo.gif)
 
 ```bash
 git clone https://github.com/QweRezX/claude-migrate-kimi ~/.kimi-code/skills/claude-migrate
 ```
 
-(or unzip [the repo archive](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip)
-into `~/.kimi-code/skills/claude-migrate/`)
+(или распакуйте [архив репозитория](https://github.com/QweRezX/claude-migrate-kimi/archive/refs/heads/main.zip)
+в `~/.kimi-code/skills/claude-migrate/`)
 
-## How it works
+## Как это работает
 
-- **Source:** Claude Code stores sessions as JSONL under `~/.claude/projects/`.
-  Discovery is by content, not folder name — `$CLAUDE_CONFIG_DIR` is honored,
-  and any custom location can be added with `--claude-dir /path`.
-- **Target:** each conversation is recreated as a native Kimi Code session
-  (`state.json` + `wire.jsonl`, wire protocol 1.5) and mapped to a Kimi
-  workspace by its original working directory.
-- **Idempotent:** already-imported sessions are skipped (`--force` re-imports).
-- **Tagged & reversible:** every imported session carries
-  `custom.importedFrom: "claude-code"` — `--undo` removes exactly those and
-  nothing else.
+- **Источник:** Claude Code хранит сессии в JSONL в `~/.claude/projects/`.
+  Поиск — по содержимому, а не по имени папки; учитывается
+  `$CLAUDE_CONFIG_DIR`, свой путь можно добавить флагом `--claude-dir`.
+- **Результат:** каждый разговор воссоздаётся как нативная сессия Kimi Code
+  (`state.json` + `wire.jsonl`, wire-протокол 1.5) и попадает в workspace по
+  своей исходной рабочей папке.
+- **Идемпотентность:** уже импортированные сессии пропускаются
+  (`--force` — импортировать заново).
+- **Метка и откат:** каждая импортированная сессия помечена
+  `custom.importedFrom: "claude-code"` — `--undo` удаляет ровно их и
+  ничего больше.
 
-## Safety
+## Безопасность
 
-- Only **adds** files; existing sessions and configs are never modified or
-  overwritten (`--config` skips anything that already exists).
-- `session_index.jsonl` is backed up to `session_index.jsonl.bak` before each batch.
+- Инструмент только **добавляет** файлы; существующие сессии и конфиги
+  никогда не изменяются и не перезаписываются (`--config` пропускает всё,
+  что уже существует).
+- Перед каждым пакетным импортом `session_index.jsonl` копируется в
+  `session_index.jsonl.bak`.
 
-## Platform support
+## Поддержка платформ
 
-Works on **Windows, macOS and Linux** — pure `pathlib`, no shell calls, no
-dependencies beyond Python 3.10+. Tested in CI on all three OSes × Python
-3.10/3.12 against wire protocol 1.5.
+Работает на **Windows, macOS и Linux** — чистый `pathlib`, без shell-вызовов,
+без зависимостей кроме Python 3.10+. Протестировано в CI на всех трёх ОС ×
+Python 3.10/3.12, wire-протокол 1.5.
 
 | | Windows | macOS / Linux |
 |---|---|---|
-| Kimi Code data | `C:\Users\<name>\.kimi-code` | `~/.kimi-code` |
-| Claude Code sessions | `C:\Users\<name>\.claude\projects` | `~/.claude/projects` |
+| Данные Kimi Code | `C:\Users\<имя>\.kimi-code` | `~/.kimi-code` |
+| Сессии Claude Code | `C:\Users\<имя>\.claude\projects` | `~/.claude/projects` |
 
-`KIMI_CODE_HOME` is honored for the Kimi side.
+Переменная `KIMI_CODE_HOME` учитывается.
 
-## Feedback & known limitations
+## Обратная связь и ограничения
 
-The Kimi wire format is **undocumented** and may change between releases —
-verified against `protocol_version: 1.5` (the tool warns you if it detects a
-different one). The import is a faithful *readable* copy, not a byte-exact
-replica: attachments are not carried over, and imported sessions are meant for
-reading/reference, not for resuming mid-task.
+Формат wire Kimi **не документирован** и может меняться между версиями —
+проверено на `protocol_version: 1.5` (инструмент предупредит, если обнаружит
+другой). Импорт — это читаемая копия, а не побайтовая реплика: вложения не
+переносятся, импортированные сессии предназначены для чтения, а не для
+продолжения работы с середины.
 
-Found a glitch? Run with `--report report.json` and share it per
-[FEEDBACK.md](FEEDBACK.md) or [open an issue](../../issues) — the report
-contains versions, counts and skipped event types, never your message text.
-Format notes for contributors: [references/formats.md](references/formats.md).
+Нашли проблему? Запустите с `--report report.json` и пришлите по инструкции
+из [FEEDBACK.md](FEEDBACK.md) или [создайте issue](../../issues) — отчёт
+содержит версии, счётчики и типы пропущенных событий, но никогда — текст
+переписки. Заметки о формате для контрибьюторов:
+[references/formats.md](references/formats.md).
 
 ## Roadmap
 
-- [x] `--list` — table of discovered sessions before importing
-- [x] `--to-md` — export sessions to readable Markdown, no Kimi required
-- [x] `--rewrite-cwd OLD=NEW` — retarget absolute paths on moved projects/machines
-- [x] `--config` — full-move mode: skills, `CLAUDE.md` → `AGENTS.md`, MCP configs
-- [ ] reverse export (Kimi Code → Claude Code)
+- [x] `--list` — таблица найденных сессий перед импортом
+- [x] `--to-md` — экспорт в читаемый Markdown без Kimi
+- [x] `--rewrite-cwd OLD=NEW` — перенацеливание путей при переезде
+- [x] `--config` — полный переезд: скиллы, `CLAUDE.md` → `AGENTS.md`, MCP
+- [ ] обратный экспорт (Kimi Code → Claude Code)
 
-Contributions welcome — open an issue to discuss before large PRs.
+Контрибуции приветствуются — для крупных PR сначала откройте issue.
 
-## Related tools
+## Похожие инструменты
 
-No other tool imports Claude Code sessions **into Kimi Code** (this repo is,
-as far as we know, the first). Neighboring projects:
+Других инструментов для импорта сессий Claude Code **в Kimi Code** нет (этот
+репозиторий, насколько нам известно, первый). Соседние проекты:
 
-- [a2migrate](https://github.com/MrMirhan/a2migrate) — Claude Code ↔ OpenCode session/skill/MCP migration (Go)
-- [oh-my-pi](https://github.com/can1357/oh-my-pi) — agent with a built-in `--from-claude` importer
-- [pi-import-claude-history](https://pi.dev/packages/pi-import-claude-history) — Claude → Pi importer
-- [claude-conversation-transfer](https://github.com/arghhhhh/claude-conversation-transfer) — Claude ↔ Claude moves between machines, with path retargeting
-- [claude-code-log](https://github.com/daaain/claude-code-log), [claude-JSONL-browser](https://github.com/withLinda/claude-JSONL-browser), [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) — render Claude sessions to HTML/Markdown
+- [a2migrate](https://github.com/MrMirhan/a2migrate) — миграция Claude Code ↔ OpenCode: сессии, скиллы, MCP (Go)
+- [oh-my-pi](https://github.com/can1357/oh-my-pi) — агент со встроенным импортёром `--from-claude`
+- [pi-import-claude-history](https://pi.dev/packages/pi-import-claude-history) — импорт Claude → Pi
+- [claude-conversation-transfer](https://github.com/arghhhhh/claude-conversation-transfer) — перенос Claude ↔ Claude между машинами
+- [claude-code-log](https://github.com/daaain/claude-code-log), [claude-JSONL-browser](https://github.com/withLinda/claude-JSONL-browser), [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) — рендер сессий Claude в HTML/Markdown
 
-## License
+## Лицензия
 
 MIT
