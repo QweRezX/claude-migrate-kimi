@@ -59,7 +59,7 @@ All flags below are appended to `python3 claude2kimi.py`
 | Import only recent chats | `--all --since 2026-10-01` |
 | Keep the assistant's thinking blocks too | `--all --with-thinking` |
 | Keep tool calls/results too | `--all --with-tools` |
-| Move skills, CLAUDE.md and MCP servers as well | `--config` |
+| Move skills, slash commands, CLAUDE.md and MCP too | `--config` |
 | Read chats without Kimi (e.g. share as text) | `--all --to-md ./export` |
 | Project moved to a new path/machine | `--all --rewrite-cwd /old/path=/new/path` |
 | Undo the whole import | `--undo` |

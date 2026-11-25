@@ -177,6 +177,10 @@ python3 claude2kimi.py --all --to-md ./export --project dasha
 Migrate configuration instead of sessions:
 
 - `~/.claude/skills/*` → `~/.kimi-code/skills/`
+- `~/.claude/commands/*.md` → converted into skill folders with a
+  generated `SKILL.md` (name from the file name, description from the
+  command's frontmatter or its first line); project commands from
+  `<project>/.claude/commands/` land in `<project>/.kimi-code/skills/`
 - `~/.claude/CLAUDE.md` → `~/.kimi-code/AGENTS.md` (global)
 - `<project>/CLAUDE.md` → `<project>/AGENTS.md` for every managed workspace
 - MCP servers from `~/.claude.json` → `~/.kimi-code/mcp.json` (user level)

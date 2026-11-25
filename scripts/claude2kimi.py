@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -646,8 +646,41 @@ def _merge_mcp(claude_servers, target_file, dry_run, actions, scope):
                                    encoding="utf-8")
 
 
+def _command_to_skill(src, skills_dir, dry_run, actions, scope):
+    """Convert a Claude slash command .md into a Kimi skill folder."""
+    name = re.sub(r"[^a-z0-9-]+", "-", src.stem.lower()).strip("-") or "command"
+    dst = skills_dir / name / "SKILL.md"
+    if dst.parent.exists():
+        actions.append({"kind": "command", "action": "skip_exists",
+                        "name": name, "scope": scope})
+        print(f"SKIP command {name!r} ({scope}): skill already exists")
+        return
+    text = src.read_text(encoding="utf-8", errors="replace")
+    desc, body = None, text
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) == 3:
+            fm, body = parts[1], parts[2].lstrip("\n")
+            m = re.search(r"^description:\s*(.+)$", fm, re.M)
+            if m:
+                desc = m.group(1).strip().strip("'\"")
+    if not desc:
+        first = next((l.strip().lstrip("# ").strip() for l in body.splitlines()
+                      if l.strip()), "")
+        desc = first[:150] or f"Imported Claude command '{name}'"
+    skill_md = (f"---\nname: {name}\ndescription: {desc}\n"
+                f"metadata:\n  importedFrom: claude-command\n---\n\n{body}")
+    actions.append({"kind": "command", "action": "convert",
+                    "from": str(src), "to": str(dst), "scope": scope})
+    print(f"{'DRY would convert' if dry_run else 'Converting'} command: "
+          f"{src.name} -> skill {name!r} ({scope})")
+    if not dry_run:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(skill_md, encoding="utf-8")
+
+
 def migrate_config(dry_run=False, claude_home=None, report=None):
-    """Migrate skills, CLAUDE.md instructions and MCP servers (never overwrites)."""
+    """Migrate skills, commands, CLAUDE.md and MCP servers (never overwrites)."""
     claude_home = Path(claude_home) if claude_home else Path.home() / ".claude"
     actions = []
 
@@ -667,6 +700,20 @@ def migrate_config(dry_run=False, claude_home=None, report=None):
                   f"{skill.name}")
             if not dry_run:
                 shutil.copytree(skill, dst)
+
+    # 1b. Slash commands: ~/.claude/commands/*.md -> skill folders
+    user_cmds = claude_home / "commands"
+    if user_cmds.is_dir():
+        for cmd in sorted(user_cmds.glob("*.md")):
+            _command_to_skill(cmd, kimi_home() / "skills", dry_run, actions,
+                              "user")
+    for wid, info in load_projects().items():
+        root = Path(info.get("root", ""))
+        pcmd = root / ".claude" / "commands"
+        if pcmd.is_dir():
+            for cmd in sorted(pcmd.glob("*.md")):
+                _command_to_skill(cmd, root / ".kimi-code" / "skills",
+                                  dry_run, actions, f"project {root}")
 
     # 2. Instructions: global and per-workspace CLAUDE.md -> AGENTS.md
     gsrc = claude_home / "CLAUDE.md"

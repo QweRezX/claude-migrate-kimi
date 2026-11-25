@@ -43,8 +43,8 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
      from `--list` as options), or only recent sessions (`--since`)?
    - **Content:** dialogue only (default), or also thinking blocks
      (`--with-thinking`) and tool calls (`--with-tools`)?
-   - **Extras:** migrate configuration too (`--config`: skills, CLAUDE.md →
-     AGENTS.md, MCP)?
+   - **Extras:** migrate configuration too (`--config`: skills, slash commands →
+     skill folders, CLAUDE.md → AGENTS.md, MCP)?
    - **Destination quirks:** did any project move to a new path
      (`--rewrite-cwd`)?
    Summarize the chosen plan back to the user and get a final confirmation
@@ -77,7 +77,9 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
 4. **Verify:** count imported sessions:
    `grep -l importedFrom ~/.kimi-code/sessions/*/*/state.json | wc -l`
 5. **Configuration (optional):** `--config --dry-run`, then `--config` —
-   copies `~/.claude/skills/*` into the Kimi skills dir, converts `CLAUDE.md`
+   copies `~/.claude/skills/*` into the Kimi skills dir, converts slash
+   commands (`~/.claude/commands/*.md` and project `.claude/commands/`) into
+   skill folders, converts `CLAUDE.md`
    to `AGENTS.md` (global and per managed workspace), and maps MCP servers
    from `~/.claude.json` into `mcp.json` (user level and per workspace).
    Existing files are never overwritten; OAuth-based MCP servers need a fresh

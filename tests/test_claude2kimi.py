@@ -451,3 +451,42 @@ def test_workspace_id_validation(kimi, session_file):
         "wm_8ff0cf5b-89bc"
     assert c2k.resolve_workspace("/x", forced="wd_my-proj_ab12cd34ef56") == \
         "wd_my-proj_ab12cd34ef56"
+
+
+# ---------------------------------------------------------------- commands
+
+def test_command_to_skill(kimi, tmp_path):
+    cmds = tmp_path / "claude2" / "commands"
+    cmds.mkdir(parents=True)
+    (cmds / "Review PR.md").write_text(
+        "---\ndescription: Reviews a pull request\n---\n\nReview the PR...",
+        encoding="utf-8")
+    (cmds / "deploy.md").write_text("# Deploy\n\nShip it.", encoding="utf-8")
+    actions = []
+    c2k._command_to_skill(cmds / "Review PR.md", kimi / "skills", False,
+                          actions, "user")
+    c2k._command_to_skill(cmds / "deploy.md", kimi / "skills", False,
+                          actions, "user")
+    sk = (kimi / "skills" / "review-pr" / "SKILL.md").read_text(encoding="utf-8")
+    assert "name: review-pr" in sk
+    assert "description: Reviews a pull request" in sk
+    assert "Review the PR..." in sk
+    sk2 = (kimi / "skills" / "deploy" / "SKILL.md").read_text(encoding="utf-8")
+    assert "description: Deploy" in sk2  # from first line when no frontmatter
+    # never overwrites
+    (kimi / "skills" / "deploy" / "SKILL.md").write_text("mine", encoding="utf-8")
+    c2k._command_to_skill(cmds / "deploy.md", kimi / "skills", False,
+                          actions, "user")
+    assert (kimi / "skills" / "deploy" / "SKILL.md").read_text(
+        encoding="utf-8") == "mine"
+
+
+def test_migrate_config_commands(kimi, claude_home, work):
+    (claude_home / "commands").mkdir()
+    (claude_home / "commands" / "hi.md").write_text("Say hi", encoding="utf-8")
+    pc = work / ".claude" / "commands"
+    pc.mkdir(parents=True)
+    (pc / "build.md").write_text("Build it", encoding="utf-8")
+    c2k.migrate_config(claude_home=claude_home)
+    assert (kimi / "skills" / "hi" / "SKILL.md").exists()
+    assert (work / ".kimi-code" / "skills" / "build" / "SKILL.md").exists()
