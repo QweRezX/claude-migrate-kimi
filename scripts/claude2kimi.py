@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -430,7 +430,7 @@ def build_wire(msgs):
 
 
 def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
-            with_thinking=False, since_ms=None, project=None,
+            with_thinking=False, since_ms=None, before_ms=None, project=None,
             rewrite_rules=None, source="claude",
             skip_existing=True, imported=None, report=None):
     src = str(Path(claude_jsonl).resolve())
@@ -457,6 +457,11 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
         print(f"FILTER {Path(claude_jsonl).name}: last activity before --since")
         if report is not None:
             report["filtered"].append({"source": src, "reason": "since"})
+        return None
+    if before_ms and msgs[-1][2] >= before_ms:
+        print(f"FILTER {Path(claude_jsonl).name}: activity on/after --before cutoff")
+        if report is not None:
+            report["filtered"].append({"source": src, "reason": "before"})
         return None
     ws = resolve_workspace(cwd, forced_ws)
     sid = f"session_{uuid.uuid4()}"
@@ -493,7 +498,8 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
     return sid
 
 
-def list_sessions(files, since_ms=None, project=None, source="claude"):
+def list_sessions(files, since_ms=None, before_ms=None, project=None,
+                  source="claude"):
     """Print a table of discovered sessions; returns rows for tests."""
     rows = []
     for f in files:
@@ -508,6 +514,8 @@ def list_sessions(files, since_ms=None, project=None, source="claude"):
         if project and project.lower() not in cwd.lower():
             continue
         if since_ms and msgs[-1][2] < since_ms:
+            continue
+        if before_ms and msgs[-1][2] >= before_ms:
             continue
         rows.append({"file": str(f), "title": title or clean_title(msgs[0][1]),
                      "cwd": cwd, "messages": len(msgs),
@@ -526,7 +534,8 @@ def list_sessions(files, since_ms=None, project=None, source="claude"):
 
 
 def export_markdown(files, outdir, with_tools=False, with_thinking=False,
-                    since_ms=None, project=None, source="claude"):
+                    since_ms=None, before_ms=None, project=None,
+                    source="claude"):
     """Write each session as a readable Markdown file; returns written paths."""
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
@@ -540,6 +549,8 @@ def export_markdown(files, outdir, with_tools=False, with_thinking=False,
         if project and project.lower() not in cwd.lower():
             continue
         if since_ms and msgs[-1][2] < since_ms:
+            continue
+        if before_ms and msgs[-1][2] >= before_ms:
             continue
         name = re.sub(r"[^\w\-]+", "-", (title or Path(f).stem)).strip("-")[:60]
         name = name or Path(f).stem
@@ -846,6 +857,18 @@ def wizard(input_fn=input):
         return
     print(f"Found {len(files)} {source} session file(s).\n")
 
+    # Guard against duplicates with Kimi's built-in importer
+    before_ms = None
+    print("Have you already used Kimi Code's built-in /import-sessions?")
+    print("(it imports the last 15-30 days as native sessions, without our marker)")
+    if _ask("[y/N] ", input_fn).lower() in ("y", "yes"):
+        from datetime import timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        before_ms = int(cutoff.timestamp() * 1000)
+        print(f"OK: I'll only offer sessions last active BEFORE "
+              f"{cutoff.date()} — the built-in already covered newer ones.")
+    print()
+
     while True:
         print("What would you like to do?")
         print("  [1] List sessions (writes nothing)")
@@ -859,11 +882,12 @@ def wizard(input_fn=input):
         choice = _ask("> ", input_fn)
 
         if choice == "1":
-            list_sessions(files, source=source)
+            list_sessions(files, before_ms=before_ms, source=source)
         elif choice == "2":
-            list_sessions(files, source=source)
+            list_sessions(files, before_ms=before_ms, source=source)
             if _confirm(f"\nImport all {len(files)} session(s)?", input_fn):
-                ok = _import_batch(files, source=source)
+                ok = _import_batch(files, before_ms=before_ms,
+                                   source=source)
                 print(f"\nDone: {ok} session(s) imported. "
                       f"Restart Kimi Code to see them.")
                 print("Changed your mind? Run: python3 claude2kimi.py --undo")
@@ -871,10 +895,12 @@ def wizard(input_fn=input):
             sub = _ask("Project name or path fragment: ", input_fn)
             if not sub:
                 continue
-            rows = list_sessions(files, project=sub, source=source)
+            rows = list_sessions(files, before_ms=before_ms, project=sub,
+                                 source=source)
             if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
                                  input_fn):
-                ok = _import_batch(files, project=sub, source=source)
+                ok = _import_batch(files, before_ms=before_ms,
+                                   project=sub, source=source)
                 print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
         elif choice == "4":
             date = _ask("Only sessions active on/after (YYYY-MM-DD): ", input_fn)
@@ -883,15 +909,18 @@ def wizard(input_fn=input):
             except ValueError:
                 print("Expected a date like 2026-10-01.")
                 continue
-            rows = list_sessions(files, since_ms=since, source=source)
+            rows = list_sessions(files, since_ms=since, before_ms=before_ms,
+                                 source=source)
             if rows and _confirm(f"\nImport these {len(rows)} session(s)?",
                                  input_fn):
-                ok = _import_batch(files, since_ms=since, source=source)
+                ok = _import_batch(files, since_ms=since,
+                                   before_ms=before_ms, source=source)
                 print(f"\nDone: {ok} session(s) imported. Restart Kimi Code.")
         elif choice == "5":
             outdir = _ask("Output folder [./claude-export]: ", input_fn) \
                 or "./claude-export"
-            export_markdown(files, outdir, source=source)
+            export_markdown(files, outdir, before_ms=before_ms,
+                            source=source)
         elif choice == "6":
             migrate_config(dry_run=True)
             if _confirm("\nApply these changes?", input_fn):
@@ -940,6 +969,10 @@ def main():
                         "collapsible think parts)")
     p.add_argument("--since", metavar="YYYY-MM-DD",
                    help="only sessions with activity on or after this date")
+    p.add_argument("--before", metavar="YYYY-MM-DD",
+                   help="only sessions with last activity BEFORE this date "
+                        "(e.g. to skip the window the built-in /import-sessions "
+                        "already covered)")
     p.add_argument("--project", metavar="SUBSTR",
                    help="only sessions whose working directory contains SUBSTR")
     p.add_argument("--force", action="store_true")
@@ -964,6 +997,12 @@ def main():
             since_ms = ts_ms(a.since + "T00:00:00Z")
         except ValueError:
             p.error(f"--since: expected YYYY-MM-DD, got {a.since!r}")
+    before_ms = None
+    if a.before:
+        try:
+            before_ms = ts_ms(a.before + "T00:00:00Z")
+        except ValueError:
+            p.error(f"--before: expected YYYY-MM-DD, got {a.before!r}")
 
     rewrite_rules = []
     for r in a.rewrite_cwd or []:
@@ -997,11 +1036,11 @@ def main():
         print(f"Found {len(files)} Claude session file(s).")
 
     if a.list:
-        list_sessions(files, since_ms, a.project, a.source)
+        list_sessions(files, since_ms, before_ms, a.project, a.source)
         return
     if a.to_md:
         export_markdown(files, a.to_md, a.with_tools, a.with_thinking,
-                        since_ms, a.project, a.source)
+                        since_ms, before_ms, a.project, a.source)
         return
 
     proto = detect_protocol()
@@ -1030,6 +1069,7 @@ def main():
         try:
             convert(f, a.workspace, a.dry_run, a.with_tools,
                     with_thinking=a.with_thinking, since_ms=since_ms,
+                    before_ms=before_ms,
                     project=a.project, rewrite_rules=rewrite_rules,
                     source=a.source,
                     skip_existing=not a.force, imported=imported, report=report)

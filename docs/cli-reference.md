@@ -113,6 +113,14 @@ Only sessions whose **last activity** is on or after this date:
 python3 claude2kimi.py --all --since 2026-10-01
 ```
 
+### `--before YYYY-MM-DD`
+Only sessions whose **last activity is before** this date. The main use:
+if the user already ran Kimi's built-in `/import-sessions` (which covers
+the last 15–30 days as native sessions without our marker), pass
+`--before <today minus 30 days>` to import only what the built-in never
+touched and avoid duplicates. The wizard asks about built-in usage and
+applies this cutoff automatically.
+
 ### `--project SUBSTR`
 Only sessions whose original working directory contains `SUBSTR`
 (case-insensitive):

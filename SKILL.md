@@ -45,6 +45,11 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
      (`--with-thinking`) and tool calls (`--with-tools`)?
    - **Extras:** migrate configuration too (`--config`: skills, slash commands →
      skill folders, CLAUDE.md → AGENTS.md, MCP)?
+   - **Built-in overlap:** has the user already run Kimi's built-in
+     `/import-sessions`? It imports the last 15-30 days as native
+     sessions WITHOUT our marker, so re-importing them would duplicate.
+     If yes, apply `--before <today minus 30 days>` so only older,
+     untouched sessions are offered.
    - **Destination quirks:** did any project move to a new path
      (`--rewrite-cwd`)?
    Summarize the chosen plan back to the user and get a final confirmation

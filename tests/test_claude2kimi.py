@@ -329,7 +329,7 @@ def test_wizard_quit(kimi, monkeypatch, capsys):
 def test_wizard_list_then_quit(kimi, session_file, monkeypatch, capsys):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["1", "1", "0"])
+    run_wizard(monkeypatch, ["1", "n", "1", "0"])
     out = capsys.readouterr().out
     assert "Test session" in out and "Bye!" in out
     # nothing imported
@@ -339,7 +339,7 @@ def test_wizard_list_then_quit(kimi, session_file, monkeypatch, capsys):
 def test_wizard_import_all(kimi, session_file, monkeypatch, capsys):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["1", "2", "y", "0"])
+    run_wizard(monkeypatch, ["1", "n", "2", "y", "0"])
     out = capsys.readouterr().out
     assert "1 session(s) imported" in out
     assert len(list((kimi / "sessions").glob("*/*/state.json"))) == 1
@@ -348,7 +348,7 @@ def test_wizard_import_all(kimi, session_file, monkeypatch, capsys):
 def test_wizard_import_declined(kimi, session_file, monkeypatch):
     monkeypatch.setattr(c2k, "discover_sessions",
                         lambda *a, **k: [str(session_file)])
-    run_wizard(monkeypatch, ["1", "2", "n", "0"])
+    run_wizard(monkeypatch, ["1", "n", "2", "n", "0"])
     assert not list((kimi / "sessions").glob("*/*/state.json"))
 
 
@@ -490,3 +490,24 @@ def test_migrate_config_commands(kimi, claude_home, work):
     c2k.migrate_config(claude_home=claude_home)
     assert (kimi / "skills" / "hi" / "SKILL.md").exists()
     assert (work / ".kimi-code" / "skills" / "build" / "SKILL.md").exists()
+
+
+def test_before_filter(kimi, session_file):
+    # session activity is 2026-01-01
+    assert c2k.convert(str(session_file),
+                       before_ms=c2k.ts_ms("2025-12-01T00:00:00Z")) is None
+    assert c2k.convert(str(session_file),
+                       before_ms=c2k.ts_ms("2026-06-01T00:00:00Z"),
+                       skip_existing=False) is not None
+
+
+def test_wizard_builtin_guard(kimi, session_file, monkeypatch, capsys):
+    monkeypatch.setattr(c2k, "discover_sessions",
+                        lambda *a, **k: [str(session_file)])
+    # built-in used -> cutoff today-30d -> 2026-01 session is old enough,
+    # but "n" path must not set a cutoff; here we answer "y" and import all
+    run_wizard(monkeypatch, ["1", "y", "2", "y", "0"])
+    out = capsys.readouterr().out
+    assert "only offer sessions last active BEFORE" in out
+    # fixture session (2026-01-01) is older than today-30d, so it imports
+    assert "1 session(s) imported" in out

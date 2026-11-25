@@ -75,6 +75,7 @@ All flags below are appended to `python3 claude2kimi.py`
 | Try one session first (recommended) | `<path to one .jsonl from --list>` |
 | Import only one project's chats | `--all --project waiterhelper` |
 | Import only recent chats | `--all --since 2026-10-01` |
+| Already used built-in `/import-sessions` — avoid duplicates | `--all --before <today-30d>` |
 | Keep the assistant's thinking blocks too | `--all --with-thinking` |
 | Keep tool calls/results too | `--all --with-tools` |
 | Move skills, slash commands, CLAUDE.md and MCP too | `--config` |
