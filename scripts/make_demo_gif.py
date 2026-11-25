@@ -12,13 +12,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 860, 520
+W, H = 900, 780
 BG = "#0d1117"
 FG = "#c9d1d9"
 DIM = "#8b949e"
 GREEN = "#3fb950"
 CYAN = "#79c0ff"
 YELLOW = "#e3b341"
+CYAN = "#79c0ff"
 PAD = 18
 LINE_H = 24
 FONT_SIZE = 17
@@ -40,27 +41,39 @@ PROMPT = "$ "
 # (kind, text) — kind: cmd | out | ok | dim | blank
 SCRIPT = [
     ("cmd", "cd claude-migrate"),
-    ("cmd", "python3 claude2kimi.py --all --list"),
-    ("out", "Found 3 Claude session file(s)."),
-    ("out", "DATE       MSGS  PROJECT            TITLE"),
-    ("out", "2026-11-02   18  ~/dev/my-app       Fix login redirect loop"),
-    ("out", "2026-11-09   42  ~/dev/blog         Add RSS feed"),
-    ("out", "2026-11-15    7  ~/dev/my-app       Refactor auth middleware"),
-    ("dim", "3 session(s)."),
+    ("cmd", "python3 claude2kimi.py"),
+    ("out", "claude2kimi — import agent sessions into Kimi Code"),
     ("blank", ""),
-    ("cmd", "python3 claude2kimi.py --all"),
-    ("out", "Found 3 Claude session file(s)."),
+    ("out", "Import from which agent?"),
+    ("out", "  [1] Claude Code"),
+    ("out", "  [2] Codex CLI / Codex Desktop"),
+    ("in", "> 1"),
+    ("out", "Found 3 claude session file(s)."),
+    ("blank", ""),
+    ("out", "What would you like to do?"),
+    ("out", "  [1] List sessions (writes nothing)"),
+    ("out", "  [2] Import everything"),
+    ("out", "  [3] Import one project"),
+    ("out", "  [4] Import recent sessions (by date)"),
+    ("out", "  [5] Export to Markdown (no Kimi needed)"),
+    ("out", "  [6] Migrate config (skills, CLAUDE.md, MCP)"),
+    ("out", "  [7] Undo a previous import"),
+    ("out", "  [0] Quit"),
+    ("in", "> 2"),
+    ("out", "DATE       MSGS  PROJECT        TITLE"),
+    ("out", "2026-11-02   18  ~/dev/my-app   Fix login redirect loop"),
+    ("out", "2026-11-09   42  ~/dev/blog     Add RSS feed"),
+    ("out", "2026-11-15    7  ~/dev/my-app   Refactor auth middleware"),
+    ("in", "Import all 3 session(s)? [y/N] y"),
     ("ok", "OK  Fix login redirect loop (18 msgs)"),
     ("ok", "OK  Add RSS feed (42 msgs)"),
     ("ok", "OK  Refactor auth middleware (7 msgs)"),
     ("blank", ""),
-    ("cmd", "python3 claude2kimi.py --undo --dry-run"),
-    ("dim", "Dry run: 3 imported session(s) would be removed."),
-    ("blank", ""),
-    ("ok", "# Restart Kimi Code — your Claude chats are in the picker."),
+    ("ok", "Done: 3 session(s) imported. Restart Kimi Code to see them."),
 ]
 
-COLORS = {"out": FG, "ok": GREEN, "dim": DIM, "cmd": FG, "blank": FG}
+COLORS = {"out": FG, "ok": GREEN, "dim": DIM, "cmd": FG, "blank": FG,
+          "in": CYAN}
 
 
 def render(lines, cursor=False):
@@ -94,12 +107,12 @@ def main():
         durations.append(dur)
 
     for kind, text in SCRIPT:
-        if kind == "cmd":
-            screen.append(("cmd", ""))
+        if kind in ("cmd", "in"):
+            screen.append((kind, ""))
             typed = ""
             for ch in text:
                 typed += ch
-                screen[-1] = ("cmd", typed)
+                screen[-1] = (kind, typed)
                 push(28, cursor=True)
             push(350, cursor=True)
         else:
