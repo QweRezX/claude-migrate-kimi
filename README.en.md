@@ -20,11 +20,16 @@ native sessions.
 - your Claude Code files on the same machine (Claude Code itself doesn't need to be running — the tool only reads files);
 - Kimi Code (only needed at the end, to see the result).
 
+> ⚠️ **Windows:** use `python` instead of `python3` — bare `python3` there
+> is often a Microsoft Store stub that just prints "Python" instead of
+> running the script.
+
 ```bash
 # 1. Download the tool (one file)
 curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-# 2. Run it — an interactive wizard walks you through everything
+# 2. cd into the folder you downloaded it to, then run —
+#    an interactive wizard walks you through everything
 python3 claude2kimi.py
 ```
 

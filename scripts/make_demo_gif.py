@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 860, 480
+W, H = 860, 520
 BG = "#0d1117"
 FG = "#c9d1d9"
 DIM = "#8b949e"
@@ -39,6 +39,7 @@ if FONT is None:
 PROMPT = "$ "
 # (kind, text) — kind: cmd | out | ok | dim | blank
 SCRIPT = [
+    ("cmd", "cd claude-migrate"),
     ("cmd", "python3 claude2kimi.py --all --list"),
     ("out", "Found 3 Claude session file(s)."),
     ("out", "DATE       MSGS  PROJECT            TITLE"),
@@ -94,13 +95,11 @@ def main():
 
     for kind, text in SCRIPT:
         if kind == "cmd":
+            screen.append(("cmd", ""))
             typed = ""
             for ch in text:
                 typed += ch
-                screen[-1:] = [("cmd", typed)] if screen and \
-                    screen[-1][0] == "cmd" and screen[-1][1] != text else screen
-                if not (screen and screen[-1] == ("cmd", typed)):
-                    screen.append(("cmd", typed))
+                screen[-1] = ("cmd", typed)
                 push(28, cursor=True)
             push(350, cursor=True)
         else:
