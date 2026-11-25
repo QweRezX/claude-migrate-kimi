@@ -144,6 +144,16 @@ dependencies beyond Python 3.10+. Tested in CI on all three OSes × Python
 
 `KIMI_CODE_HOME` is honored for the Kimi side.
 
+## What if I have no local chats?
+
+The tool reads **files on disk**, so:
+
+- **Chats in a non-standard folder** — point at it: `--claude-dir /path`;
+- **Chats on another machine** — copy its `~/.claude` (or `~/.codex`) folder over and point `--claude-dir` at the copy;
+- **Web/mobile apps only** — those conversations live in the cloud, not on disk. For ChatGPT, import from the official data export (Settings → Data Controls → Export) is on the roadmap; claude.ai web chats are not importable yet.
+
+In this situation the wizard and the agent write nothing and explain the options.
+
 ## Feedback & known limitations
 
 The Kimi wire format is **undocumented** and may change between releases —

@@ -49,6 +49,15 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
      (`--rewrite-cwd`)?
    Summarize the chosen plan back to the user and get a final confirmation
    before any writing run.
+
+   **If nothing is found,** do not just fail — explain and offer the three
+   likely fixes: (1) sessions in a non-standard place → ask for the path and
+   use `--claude-dir`; (2) chats on another machine → have the user copy
+   that machine's `~/.claude` / `~/.codex` folder over and point
+   `--claude-dir` at it; (3) the user only used web/mobile apps — those
+   chats live in the cloud, not on disk; say honestly that claude.ai web
+   chats are not importable yet and ChatGPT needs the official data export
+   (support planned). Never pretend an import happened.
 1. **Preview first:**
    `python scripts/claude2kimi.py --all --dry-run` (with the flags chosen
    in step 0). Check message counts and titles look sane.

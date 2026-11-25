@@ -783,10 +783,19 @@ def wizard(input_fn=input):
     source = "codex" if _ask("> ", input_fn) == "2" else "claude"
     files = discover_sessions(source=source)
     if not files:
-        print(f"No {source} sessions found in the default locations.")
-        print("If it was installed elsewhere, run:")
-        print(f"  python3 claude2kimi.py --from {source} --all "
+        print(f"No {source} sessions found in the default locations.\n")
+        print("This usually means one of:")
+        print("  1. Sessions live elsewhere — point the tool at them:")
+        print(f"       python3 claude2kimi.py --from {source} --all "
               f"--claude-dir /path/to/folder")
+        print("  2. Your chats are on another machine — copy its "
+              f"{'~/.claude' if source == 'claude' else '~/.codex'} folder "
+              "here and use --claude-dir.")
+        print("  3. You only used the web/mobile apps — those chats are in "
+              "the cloud,\n     not on disk. ChatGPT: export via Settings → "
+              "Data Controls → Export\n     (import support is on the "
+              "roadmap); claude.ai web chats are not\n     importable yet.")
+        print("\nNothing was written. Come back when you have the files!")
         return
     print(f"Found {len(files)} {source} session file(s).\n")
 
