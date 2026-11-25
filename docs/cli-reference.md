@@ -121,6 +121,12 @@ the last 15–30 days as native sessions without our marker), pass
 touched and avoid duplicates. The wizard asks about built-in usage and
 applies this cutoff automatically.
 
+Independently of any answers or flags, the importer also **auto-detects
+duplicates**: before writing, each candidate is compared (title +
+creation day) against existing native Kimi sessions that carry no
+claude-migrate marker. A match is skipped with a warning naming the
+likely cause (built-in import); `--force` overrides.
+
 ### `--project SUBSTR`
 Only sessions whose original working directory contains `SUBSTR`
 (case-insensitive):

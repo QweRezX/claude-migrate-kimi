@@ -511,3 +511,27 @@ def test_wizard_builtin_guard(kimi, session_file, monkeypatch, capsys):
     assert "only offer sessions last active BEFORE" in out
     # fixture session (2026-01-01) is older than today-30d, so it imports
     assert "1 session(s) imported" in out
+
+
+def test_builtin_duplicate_autoskip(kimi, session_file, work):
+    # simulate a session created by the built-in importer: native, no marker,
+    # same title and creation day as the fixture session would get
+    native = kimi / "sessions" / "wm_test-123" / "session_builtin"
+    native.mkdir(parents=True)
+    (native / "state.json").write_text(json.dumps({
+        "id": "session_builtin", "title": "Test session",
+        "createdAt": c2k.ts_ms("2026-01-01T15:00:00Z"),
+        "cwd": str(work), "custom": {},
+    }), encoding="utf-8")
+    # auto-skipped without any user answer
+    assert c2k.convert(str(session_file)) is None
+    # --force (skip_existing=False) still imports
+    assert c2k.convert(str(session_file), skip_existing=False) is not None
+
+
+def test_own_imports_not_flagged_as_duplicates(kimi, session_file):
+    sid = c2k.convert(str(session_file))
+    assert sid  # first import fine
+    # second run: skipped by path-idempotency, not the duplicate guard
+    assert c2k.convert(str(session_file),
+                       imported=c2k.already_imported()) is None

@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -369,6 +369,29 @@ def already_imported():
     return found
 
 
+def _title_key(title, created_ms):
+    t = re.sub(r"\s+", " ", (title or "").strip().lower())
+    day = datetime.fromtimestamp(created_ms / 1000, tz=timezone.utc).date().isoformat()
+    return (t, day)
+
+
+def native_session_keys():
+    """(title, creation-day) of sessions NOT imported by us — anything the
+    built-in /import-sessions or a human created. Used to avoid duplicates:
+    built-in imports carry no marker, so path-based idempotency can't see them."""
+    keys = set()
+    for state in (kimi_home() / "sessions").glob("*/*/state.json"):
+        try:
+            s = json.loads(state.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if (s.get("custom") or {}).get("importedFrom"):
+            continue  # ours — handled by path-based idempotency
+        if s.get("title") and s.get("createdAt"):
+            keys.add(_title_key(s["title"], s["createdAt"]))
+    return keys
+
+
 def build_wire(msgs):
     events = [
         {"type": "metadata", "protocol_version": "1.5", "created_at": msgs[0][2]},
@@ -463,6 +486,19 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
         if report is not None:
             report["filtered"].append({"source": src, "reason": "before"})
         return None
+    title_guess = title or clean_title(msgs[0][1])
+    if skip_existing:
+        nk = _title_key(title_guess or f"Imported {source} session",
+                        msgs[0][2])
+        if nk in native_session_keys():
+            print(f"SKIP {Path(claude_jsonl).name}: a native Kimi session with "
+                  f"the same title and date already exists — probably imported "
+                  f"by the built-in /import-sessions. Use --force to import "
+                  f"anyway.")
+            if report is not None:
+                report["filtered"].append(
+                    {"source": src, "reason": "possible_builtin_duplicate"})
+            return None
     ws = resolve_workspace(cwd, forced_ws)
     sid = f"session_{uuid.uuid4()}"
     sdir = kimi_home() / "sessions" / ws / sid

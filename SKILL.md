@@ -49,7 +49,10 @@ Script: `scripts/claude2kimi.py` (Python 3.10+, no dependencies).
      `/import-sessions`? It imports the last 15-30 days as native
      sessions WITHOUT our marker, so re-importing them would duplicate.
      If yes, apply `--before <today minus 30 days>` so only older,
-     untouched sessions are offered.
+     untouched sessions are offered. The script additionally
+     auto-skips candidates that match an existing native session by
+     title + creation day, even if the user answered "no" — report such
+     skips to the user instead of forcing.
    - **Destination quirks:** did any project move to a new path
      (`--rewrite-cwd`)?
    Summarize the chosen plan back to the user and get a final confirmation
