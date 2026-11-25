@@ -25,11 +25,12 @@
 > вроде «Python» вместо запуска скрипта.
 
 ```bash
-# 1. Скачайте инструмент (один файл)
+# 1. Создайте папку, перейдите в неё и скачайте инструмент (один файл)
+mkdir claude-migrate
+cd claude-migrate
 curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-# 2. Перейдите в папку, куда скачали файл (здесь — текущая), и запустите
-#    интерактивный мастер проведёт через всё сам
+# 2. Запустите — интерактивный мастер проведёт через всё сам
 python3 claude2kimi.py
 ```
 

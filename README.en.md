@@ -25,11 +25,12 @@ native sessions.
 > running the script.
 
 ```bash
-# 1. Download the tool (one file)
+# 1. Create a folder, cd into it, download the tool (one file)
+mkdir claude-migrate
+cd claude-migrate
 curl -LO https://raw.githubusercontent.com/QweRezX/claude-migrate-kimi/main/scripts/claude2kimi.py
 
-# 2. cd into the folder you downloaded it to, then run —
-#    an interactive wizard walks you through everything
+# 2. Run it — an interactive wizard walks you through everything
 python3 claude2kimi.py
 ```
 
