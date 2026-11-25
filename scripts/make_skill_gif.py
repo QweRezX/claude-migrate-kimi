@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 860, 810
+W, H = 860, 900
 BG = "#0d1117"
 PANEL = "#161b22"
 FG = "#c9d1d9"
@@ -46,31 +46,31 @@ FB = font(FONT_SIZE + 1)
 # ("tool", [lines])   — terminal-style block
 SCRIPT = [
     ("user", "Install the claude-migrate skill from "
-             "github.com/QweRezX/claude-migrate-kimi and import my "
-             "Claude Code sessions"),
-    ("agent", "I'll install the skill, then import your sessions."),
-    ("tool", ["$ git clone https://github.com/QweRezX/claude-migrate-kimi \\",
+             "github.com/QweRezX/claude-migrate-kimi and import ALL my "
+             "Claude Code sessions, including old ones"),
+    ("agent", "Heads-up: Kimi Code already has a built-in importer - "
+              "/import-sessions covers the last 15-30 days, and "
+              "/import-from-cc-codex migrates config (skills, MCP)."),
+    ("agent", "For your full history I'll add the claude-migrate skill "
+              "on top. Installing..."),
+    ("tool", ["$ git clone https://github.com/QweRezX/claude-migrate-kimi",
               "    ~/.kimi-code/skills/claude-migrate",
               "Cloning into 'claude-migrate'... done."]),
-    ("agent", "Skill installed. Checking your Claude sessions..."),
-    ("tool", ["$ python3 ~/.kimi-code/skills/claude-migrate/scripts/"
-              "claude2kimi.py --all --list",
+    ("tool", ["$ python3 .../claude2kimi.py --all --list",
               "DATE       MSGS  PROJECT        TITLE",
+              "2026-06-14   55  ~/dev/blog     Migrate comments DB",
               "2026-11-02   18  ~/dev/my-app   Fix login redirect loop",
-              "2026-11-09   42  ~/dev/blog     Add RSS feed",
               "2026-11-15    7  ~/dev/my-app   Refactor auth middleware",
               "3 session(s)."]),
-    ("agent", "Found 3 sessions in 2 projects: my-app (2), blog (1). "
-              "Import everything, or just one project? (dry run — "
-              "nothing written yet)"),
+    ("agent", "Found 3 sessions - the June one is beyond the built-in's "
+              "30-day window. Import everything, or just one project?"),
     ("user", "everything please"),
     ("tool", ["$ python3 .../claude2kimi.py --all",
+              "OK  Migrate comments DB (55 msgs)",
               "OK  Fix login redirect loop (18 msgs)",
-              "OK  Add RSS feed (42 msgs)",
               "OK  Refactor auth middleware (7 msgs)"]),
-    ("agent", "Done — sessions imported, and the skill stays installed: next "
-              "time just ask. Restart Kimi Code to see your chats; undo "
-              "anytime with --undo."),
+    ("agent", "Done - full history imported, undo anytime with --undo. "
+              "For config migration use the built-in /import-from-cc-codex."),
 ]
 
 

@@ -13,6 +13,24 @@ readable like native sessions. An interactive wizard walks you through it.
 
 ![claude2kimi demo: list, import, undo](docs/demo.gif)
 
+## Kimi Code already has a built-in importer — why this tool?
+
+Fair question. Kimi Code ships `/import-sessions` (Claude Code and Codex
+sessions, **last 15–30 days only**) and `/import-from-cc-codex`
+(instructions, skills, MCP). This project is an addition on top of them,
+not a replacement:
+
+| | Built-in import | claude-migrate |
+|---|---|---|
+| Sessions from the last 15–30 days | ✅ | ✅ |
+| **Full history, any depth** | ❌ | ✅ |
+| Instructions / skills / MCP | ✅ (use it for config!) | ✅ (`--config`) |
+| Slash commands → skills | ❌ | ✅ |
+| Dry-run / undo / filters / Markdown export | ❌ | ✅ |
+
+Recommended combo: built-in `/import-from-cc-codex` for configuration,
+this tool for the complete chat history.
+
 ## 60-second quickstart
 
 **What you need:**
