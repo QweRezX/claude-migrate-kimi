@@ -1,14 +1,14 @@
 ---
 name: claude-migrate
-description: Import Claude Code chat history into Kimi Code as native sessions. Use when the user asks to migrate, import, or transfer Claude Code sessions/chats/history into Kimi Code, mentions switching from Claude, or wants their ~/.claude/projects JSONL sessions to appear in the Kimi Code session picker.
+description: Import Claude Code and Codex chat history into Kimi Code as native sessions, plus config (skills, slash commands, CLAUDE.md, MCP). Use when the user asks to migrate, import, or transfer Claude Code or Codex sessions/chats/history into Kimi Code, mentions switching from Claude or Codex, or wants their ~/.claude/projects or ~/.codex/sessions files to appear in the Kimi Code session picker.
 license: MIT
 metadata:
-  version: "0.2.0"
+  version: "0.7.1"
 ---
 
-# Claude → Kimi Code session migration
+# Agent sessions → Kimi Code migration
 
-Recreate Claude Code conversations as native Kimi Code sessions: they show up
+Recreate Claude Code and Codex conversations as native Kimi Code sessions: they show up
 in the session picker with original titles and dates and open as readable
 chats (user/assistant dialogue; tool calls optional).
 

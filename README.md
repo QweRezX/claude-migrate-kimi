@@ -6,10 +6,10 @@
 [![release](https://img.shields.io/github/v/release/QweRezX/claude-migrate-kimi)](https://github.com/QweRezX/claude-migrate-kimi/releases/latest)
 [![license](https://img.shields.io/github/license/QweRezX/claude-migrate-kimi)](LICENSE)
 
-**Переходите с Claude Code на Kimi Code? Заберите свои чаты с собой.**
-Один Python-файл без зависимостей — ваши разговоры из Claude появятся в
-списке сессий Kimi Code с оригинальными названиями и датами и откроются
-как обычные чаты.
+**Переходите с Claude Code или Codex на Kimi Code? Заберите свои чаты с собой.**
+Один Python-файл без зависимостей — ваши разговоры из Claude Code и Codex
+появятся в списке сессий Kimi Code с оригинальными названиями и датами и
+откроются как обычные чаты. Интерактивный мастер проведёт через всё сам.
 
 ![Демо claude2kimi: список, импорт, откат](docs/demo.gif)
 
