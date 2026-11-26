@@ -42,6 +42,13 @@ files from `~/.codex/sessions/` (or `$CODEX_HOME`), one file per session
 
 - reasoning blocks are **encrypted by OpenAI** — `--with-thinking` has
   nothing to import there;
+- harness noise is filtered automatically: AGENTS.md instruction
+  injections at session start, relay envelopes ('The following is the
+  Codex agent history…'), approval verdicts, and Host/Retained-source
+  lines. Relay bodies that flatten a conversation into `user:`/
+  `assistant:` lines are unwrapped back into separate messages, so
+  imported chats read like real dialogues and titles come from the
+  first real message;
 - `.zst`-compressed archives are skipped (decompress with `zstd -d`
   first if you need them);
 - tool calls (`exec` etc.) are included with `--with-tools`.
