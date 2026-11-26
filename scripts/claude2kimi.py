@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.5"
+VERSION = "0.7.6"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -251,10 +251,13 @@ CODEX_ENVELOPE_PREFIXES = (
     "Received message: fco_",
     "Received message: msg_",
     "Source thread:",
+    "Host notice:",
     "Host: Up to three recent user messages",
     "Host: Retained source order labels",
     "Host:",
+    "Retained source order",
 )
+_CODEX_INSTRUCTION_PREFIX = "# AGENTS.md instructions for"
 _CODEX_VERDICT_KEYS = {"outcome", "risk_level", "user_authorization",
                        "rationale", "command", "cwd", "approval_mode"}
 
@@ -270,6 +273,42 @@ def _codex_is_verdict(text):
     except json.JSONDecodeError:
         return False
     return isinstance(obj, dict) and set(obj) <= _CODEX_VERDICT_KEYS
+
+
+def _codex_parse_transcript(text):
+    """Codex relays flatten a conversation into lines prefixed
+    'user: ' / 'assistant: '. Reconstruct separate messages from them.
+    Returns [(role, body), ...] or [] if the text is not such a transcript."""
+    out, role, buf = [], None, []
+
+    def flush():
+        nonlocal role, buf
+        if role and buf:
+            body = "\n".join(buf).strip()
+            if body:
+                out.append((role, body))
+        role, buf = None, []
+
+    for line in text.splitlines():
+        st = line.strip()
+        if not st:
+            if role:
+                buf.append("")
+            continue
+        if st.startswith(CODEX_ENVELOPE_PREFIXES):
+            continue
+        low = st.lower()
+        if low.startswith("user:"):
+            flush()
+            role, buf = "user", [st[5:].lstrip()]
+        elif low.startswith("assistant:"):
+            flush()
+            role, buf = "assistant", [st[10:].lstrip()]
+        elif role:
+            buf.append(line)
+        # lines before the first role prefix are headers — dropped
+    flush()
+    return out
 
 
 def _codex_clean_user_text(text):
@@ -328,8 +367,16 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
             if not text:
                 continue
             if role == "user":
-                if text.startswith("<"):
-                    continue  # environment_context / user_instructions wrappers
+                if text.startswith("<") or \
+                        text.startswith(_CODEX_INSTRUCTION_PREFIX):
+                    continue  # environment/instruction injections, not dialogue
+                tr = _codex_parse_transcript(text)
+                if tr:
+                    for i, (r, body) in enumerate(tr):
+                        if _codex_is_verdict(body):
+                            continue
+                        msgs.append((r, body, ts + i, []))
+                    continue
                 cleaned = _codex_clean_user_text(text)
                 if not cleaned:
                     stats["skipped_events"]["codex-envelope"] = \
@@ -340,6 +387,14 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
                 stats["skipped_events"]["codex-verdict"] = \
                     stats["skipped_events"].get("codex-verdict", 0) + 1
                 continue
+            else:
+                tr = _codex_parse_transcript(text)
+                if tr:
+                    for i, (r, body) in enumerate(tr):
+                        if _codex_is_verdict(body):
+                            continue
+                        msgs.append((r, body, ts + i, []))
+                    continue
             msgs.append((role, text, ts, []))
         elif with_tools and t == "response_item" and \
                 p.get("type") in ("custom_tool_call", "function_call"):

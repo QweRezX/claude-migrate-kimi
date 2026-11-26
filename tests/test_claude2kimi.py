@@ -615,3 +615,50 @@ def test_codex_envelopes_and_verdicts_filtered(kimi, tmp_path):
     assert msgs[1][1] == "Готово, правка внесена."
     assert stats["skipped_events"].get("codex-envelope") == 1
     assert stats["skipped_events"].get("codex-verdict") == 1
+
+
+def test_codex_transcript_unwrap_and_instructions(kimi, tmp_path):
+    f = tmp_path / "rollout.jsonl"
+    relay_body = (
+        "The following is the Codex agent history added since your last "
+        "approval assessment.\n"
+        ">>> SENDER USER MESSAGES START\n"
+        "Host: Up to three recent user messages\n"
+        "assistant: SSH-подключение работает.\n"
+        "assistant: Проверено.\n"
+        "user: Давай\n"
+        "user: Если у тебя заработало подключение, перенеси и на другие чаты\n"
+        "Host notice: some original assistant context is unavailable.\n"
+        "Retained source order: 60\n"
+        "assistant: Скрипт ожидает архив с каталогом src внутри."
+    )
+    lines = [
+        {"timestamp": "2026-11-20T09:00:00.000Z", "type": "session_meta",
+         "payload": {"id": "x", "cwd": "/work/p"}},
+        # instruction injection — skipped, must not become the title
+        {"timestamp": "2026-11-20T09:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text":
+              "# AGENTS.md instructions for C:\work\p <INSTRUCTIONS>\n"
+              "# Документация проекта\nСодержимое AGENTS.md..."}]}},
+        # relay envelope — must unwrap into real messages
+        {"timestamp": "2026-11-20T09:00:02.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text": relay_body}]}},
+    ]
+    f.write_text("\n".join(json.dumps(l) for l in lines) + "\n",
+                 encoding="utf-8")
+    msgs, title, _, stats = c2k.extract_codex(f)
+    bodies = [m[1] for m in msgs]
+    assert "SSH-подключение работает." in bodies
+    assert "Давай" in bodies
+    assert "Скрипт ожидает архив с каталогом src внутри." in bodies
+    assert not any("Host notice" in b or "Retained source order" in b
+                   for b in bodies)
+    assert not any(b.startswith("# AGENTS.md instructions")
+                   for b in bodies)
+    # title falls back to the first REAL message
+    sid = c2k.convert(str(f), source="codex", skip_existing=False)
+    state = json.loads(next((kimi / "sessions").glob(f"*/{sid}/state.json"))
+                       .read_text(encoding="utf-8"))
+    assert "AGENTS.md instructions" not in state["title"]
