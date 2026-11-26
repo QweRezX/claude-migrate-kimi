@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.4"
+VERSION = "0.7.5"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -241,6 +241,53 @@ def extract_messages(claude_jsonl, with_tools=False, with_thinking=False):
 
 # ----------------------------------------------------------------- Codex side
 
+# Codex wraps user input in harness "relay" envelopes (approval-assessment
+# captures, sender-message blocks). Their boilerplate lines:
+CODEX_ENVELOPE_PREFIXES = (
+    "The following is the Codex agent history",
+    ">>> SENDER USER MESSAGES START",
+    ">>> RETAINED USER INSTRUCTIONS START",
+    ">>> ",
+    "Received message: fco_",
+    "Received message: msg_",
+    "Source thread:",
+    "Host: Up to three recent user messages",
+    "Host: Retained source order labels",
+    "Host:",
+)
+_CODEX_VERDICT_KEYS = {"outcome", "risk_level", "user_authorization",
+                       "rationale", "command", "cwd", "approval_mode"}
+
+
+def _codex_is_verdict(text):
+    """Assistant messages that are pure approval verdicts
+    ({\"outcome\":\"allow\"} etc.) — harness internals, not dialogue."""
+    t = (text or "").strip()
+    if not (t.startswith("{") and t.endswith("}")):
+        return False
+    try:
+        obj = json.loads(t)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(obj, dict) and set(obj) <= _CODEX_VERDICT_KEYS
+
+
+def _codex_clean_user_text(text):
+    """Strip relay-envelope boilerplate lines; return None if nothing real
+    remains. Keeps any actual user content embedded in the envelope."""
+    kept = []
+    for line in text.splitlines():
+        st = line.strip()
+        if not st:
+            continue
+        if st.startswith(CODEX_ENVELOPE_PREFIXES):
+            continue
+        kept.append(line)
+    if not kept:
+        return None
+    return "\n".join(kept).strip() or None
+
+
 def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
     """Parse a Codex CLI/Desktop rollout .jsonl into (messages, title, cwd, stats).
 
@@ -280,8 +327,19 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
             text = "\n".join(x for x in texts if x and x.strip()).strip()
             if not text:
                 continue
-            if role == "user" and text.startswith("<"):
-                continue  # environment_context / user_instructions wrappers
+            if role == "user":
+                if text.startswith("<"):
+                    continue  # environment_context / user_instructions wrappers
+                cleaned = _codex_clean_user_text(text)
+                if not cleaned:
+                    stats["skipped_events"]["codex-envelope"] = \
+                        stats["skipped_events"].get("codex-envelope", 0) + 1
+                    continue
+                text = cleaned
+            elif _codex_is_verdict(text):
+                stats["skipped_events"]["codex-verdict"] = \
+                    stats["skipped_events"].get("codex-verdict", 0) + 1
+                continue
             msgs.append((role, text, ts, []))
         elif with_tools and t == "response_item" and \
                 p.get("type") in ("custom_tool_call", "function_call"):

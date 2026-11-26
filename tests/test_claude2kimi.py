@@ -576,3 +576,42 @@ def test_update_missing_source(kimi, session_file):
     session_file.unlink()
     stats = c2k.update_imported()
     assert len(stats["missing_source"]) == 1
+
+
+def test_codex_envelopes_and_verdicts_filtered(kimi, tmp_path):
+    f = tmp_path / "rollout.jsonl"
+    lines = [
+        {"timestamp": "2026-11-20T10:00:00.000Z", "type": "session_meta",
+         "payload": {"id": "x", "cwd": "/work/p"}},
+        # pure envelope: no real content
+        {"timestamp": "2026-11-20T10:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text":
+              "The following is the Codex agent history added since your "
+              "last approval assessment.\n>>> SENDER USER MESSAGES START\n"
+              "Received message: fco_01a2xxx\nSource thread: 01afexxx\n"
+              "Host: Up to three recent user messages"}]}},
+        # envelope with real content embedded
+        {"timestamp": "2026-11-20T10:00:02.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text":
+              ">>> SENDER USER MESSAGES START\nHost: Up to three recent\n"
+              "Продолжи правку файла config.js"}]}},
+        # assistant approval verdict
+        {"timestamp": "2026-11-20T10:00:03.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "content": [
+             {"type": "output_text",
+              "text": '{"outcome":"allow"}'}]}},
+        # real assistant reply
+        {"timestamp": "2026-11-20T10:00:04.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "content": [
+             {"type": "output_text", "text": "Готово, правка внесена."}]}},
+    ]
+    f.write_text("\n".join(json.dumps(l) for l in lines) + "\n",
+                 encoding="utf-8")
+    msgs, _, _, stats = c2k.extract_codex(f)
+    assert [m[0] for m in msgs] == ["user", "assistant"]
+    assert msgs[0][1] == "Продолжи правку файла config.js"
+    assert msgs[1][1] == "Готово, правка внесена."
+    assert stats["skipped_events"].get("codex-envelope") == 1
+    assert stats["skipped_events"].get("codex-verdict") == 1
