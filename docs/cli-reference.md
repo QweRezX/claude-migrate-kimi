@@ -207,6 +207,15 @@ skipped and listed. OAuth-based MCP servers need a fresh
 `/mcp-config login <name>` in Kimi Code afterwards — credentials are not
 portable. Supports `--dry-run` and `--report`.
 
+### `--update`
+Re-import sessions **previously imported by this tool**, appending
+messages that appeared in the source afterwards. The Kimi session keeps
+its id and position in the picker — no duplicates. Requires the source
+files to still exist; sessions without our marker (e.g. built-in
+imports) are not matchable and are left alone. Supports `--dry-run` and
+`--report`. Use case: you migrated, kept working in Claude/Codex, and
+want to top up the imported history.
+
 ### `--undo`
 Remove every session previously imported by this tool (identified by the
 `importedFrom: "claude-code"` marker in `state.json`) and clean their lines

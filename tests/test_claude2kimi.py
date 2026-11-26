@@ -544,3 +544,35 @@ def test_synced_skills_skipped(kimi, claude_home):
     c2k.migrate_config(claude_home=claude_home)
     assert not (kimi / "skills" / "synced").exists()
     assert (kimi / "skills" / "my-skill").exists()  # normal skill still copied
+
+
+def test_update_appends_new_messages(kimi, session_file, work):
+    import io
+    sid = c2k.convert(str(session_file), skip_existing=False)
+    # continue the source session: two new messages
+    with open(session_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user",
+                                "timestamp": "2026-01-02T10:00:00.000Z",
+                                "cwd": str(work / "proj"),
+                                "message": {"role": "user", "content": [
+                                    {"type": "text", "text": "follow-up"}]}}) + "\n")
+        f.write(json.dumps({"type": "assistant",
+                                "timestamp": "2026-01-02T10:00:30.000Z",
+                                "cwd": str(work / "proj"),
+                                "message": {"role": "assistant", "content": [
+                                    {"type": "text", "text": "done more"}]}}) + "\n")
+    stats = c2k.update_imported()
+    assert len(stats["updated"]) == 1
+    # same session id, extended wire
+    wire = read_wire(kimi, sid)
+    assert [e["type"] for e in wire].count("agent.message.appended") == 6
+    # second update: nothing new
+    stats2 = c2k.update_imported()
+    assert stats2["updated"] == [] and len(stats2["uptodate"]) == 1
+
+
+def test_update_missing_source(kimi, session_file):
+    c2k.convert(str(session_file), skip_existing=False)
+    session_file.unlink()
+    stats = c2k.update_imported()
+    assert len(stats["missing_source"]) == 1
