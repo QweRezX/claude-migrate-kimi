@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.6"
+VERSION = "0.7.7"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -258,6 +258,13 @@ CODEX_ENVELOPE_PREFIXES = (
     "Retained source order",
 )
 _CODEX_INSTRUCTION_PREFIX = "# AGENTS.md instructions for"
+_CODEX_TOOL_RECORD_RE = re.compile(
+    r"^\[\d+\] tool (exec result|exec call|wait call|wait result)\b")
+_CODEX_REVIEW_MARKERS = (
+    "Reviewed Codex session id:",
+    "The Codex agent has requested the following next action",
+    "<guardian_tool_descriptions>",
+)
 _CODEX_VERDICT_KEYS = {"outcome", "risk_level", "user_authorization",
                        "rationale", "command", "cwd", "approval_mode"}
 
@@ -275,11 +282,18 @@ def _codex_is_verdict(text):
     return isinstance(obj, dict) and set(obj) <= _CODEX_VERDICT_KEYS
 
 
+_CODEX_ROLE_LINE_RE = re.compile(
+    r"^\s*(?:\[(\d+)\]\s*)?(user|assistant)\s*:\s*", re.I)
+
+
 def _codex_parse_transcript(text):
-    """Codex relays flatten a conversation into lines prefixed
-    'user: ' / 'assistant: '. Reconstruct separate messages from them.
-    Returns [(role, body), ...] or [] if the text is not such a transcript."""
+    """Codex relays flatten a conversation into lines like 'user: …',
+    'assistant: …' or their indexed forms '[12] user: …'. Reconstruct
+    separate messages. Returns (preamble, [(role, body), …]); preamble is
+    real content before the first role line (or None) and is kept as a
+    message of the enclosing role."""
     out, role, buf = [], None, []
+    preamble = []
 
     def flush():
         nonlocal role, buf
@@ -295,20 +309,21 @@ def _codex_parse_transcript(text):
             if role:
                 buf.append("")
             continue
+        m = _CODEX_ROLE_LINE_RE.match(line)
+        if m:
+            flush()
+            role = m.group(2).lower()
+            buf = [line[m.end():].lstrip()]
+            continue
         if st.startswith(CODEX_ENVELOPE_PREFIXES):
             continue
-        low = st.lower()
-        if low.startswith("user:"):
-            flush()
-            role, buf = "user", [st[5:].lstrip()]
-        elif low.startswith("assistant:"):
-            flush()
-            role, buf = "assistant", [st[10:].lstrip()]
-        elif role:
+        if role:
             buf.append(line)
-        # lines before the first role prefix are headers — dropped
+        else:
+            preamble.append(line)
     flush()
-    return out
+    pre = "\n".join(preamble).strip() or None
+    return pre, out
 
 
 def _codex_clean_user_text(text):
@@ -370,12 +385,25 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
                 if text.startswith("<") or \
                         text.startswith(_CODEX_INSTRUCTION_PREFIX):
                     continue  # environment/instruction injections, not dialogue
-                tr = _codex_parse_transcript(text)
+                tr_pre, tr = _codex_parse_transcript(text)
                 if tr:
+                    if tr_pre:
+                        msgs.append((role, tr_pre.strip(), ts, []))
                     for i, (r, body) in enumerate(tr):
                         if _codex_is_verdict(body):
                             continue
-                        msgs.append((r, body, ts + i, []))
+                        msgs.append((r, body, ts + i + 1, []))
+                    continue
+                if text.startswith("<no retained transcript delta entries>") \
+                        or (all(m in text for m in _CODEX_REVIEW_MARKERS[:2])
+                            and _CODEX_REVIEW_MARKERS[2] in text):
+                    stats["skipped_events"]["codex-review-envelope"] = \
+                        stats["skipped_events"].get("codex-review-envelope",
+                                                    0) + 1
+                    continue
+                if _CODEX_TOOL_RECORD_RE.match(text):
+                    stats["skipped_events"]["codex-tool-record"] = \
+                        stats["skipped_events"].get("codex-tool-record", 0) + 1
                     continue
                 cleaned = _codex_clean_user_text(text)
                 if not cleaned:
@@ -388,12 +416,14 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
                     stats["skipped_events"].get("codex-verdict", 0) + 1
                 continue
             else:
-                tr = _codex_parse_transcript(text)
+                tr_pre, tr = _codex_parse_transcript(text)
                 if tr:
+                    if tr_pre:
+                        msgs.append((role, tr_pre.strip(), ts, []))
                     for i, (r, body) in enumerate(tr):
                         if _codex_is_verdict(body):
                             continue
-                        msgs.append((r, body, ts + i, []))
+                        msgs.append((r, body, ts + i + 1, []))
                     continue
             msgs.append((role, text, ts, []))
         elif with_tools and t == "response_item" and \
@@ -422,7 +452,40 @@ def extract_codex(codex_jsonl, with_tools=False, with_thinking=False):
         else:
             stats["skipped_events"][f"{t}/{p.get('type')}"] = \
                 stats["skipped_events"].get(f"{t}/{p.get('type')}", 0) + 1
-    return msgs, title, cwd, stats
+    # post-pass: relays re-send accumulated history each approval cycle
+    # with slightly different tails — strip tool records and review
+    # envelopes, then dedup on the opening of the cleaned body per role.
+    cleaned_msgs, seen = [], set()
+    tool_line = re.compile(r"^\[\d+\] tool (exec|wait)\b|^Wall time [\d.]+ seconds$")
+    for role, text, ts, thinks in msgs:
+        # remove tool-record blocks: the record line plus its non-blank body
+        orig = text.splitlines()
+        lines, i = [], 0
+        while i < len(orig):
+            if tool_line.match(orig[i].strip()):
+                i += 1
+                while i < len(orig) and orig[i].strip() != "":
+                    i += 1
+                continue
+            lines.append(orig[i])
+            i += 1
+        # review envelopes are sometimes appended after real content —
+        # truncate the body at the envelope start
+        for j, l in enumerate(lines):
+            if l.strip().startswith("Reviewed Codex session id:") or                     "<no retained transcript delta entries>" in l:
+                lines = lines[:j]
+                break
+        body = chr(10).join(lines).strip()
+        if not body:
+            stats["skipped_events"]["codex-tool-record"] =                 stats["skipped_events"].get("codex-tool-record", 0) + 1
+            continue
+        key = (role, re.sub(r"\s+", " ", body)[:200])
+        if key in seen:
+            stats["skipped_events"]["codex-duplicate"] =                 stats["skipped_events"].get("codex-duplicate", 0) + 1
+            continue
+        seen.add(key)
+        cleaned_msgs.append((role, body, ts, thinks))
+    return cleaned_msgs, title, cwd, stats
 
 
 EXTRACTORS = {"claude": extract_messages, "codex": extract_codex}
@@ -622,7 +685,8 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
         "custom": {"importedFrom": MARKERS[source], "claudeSession": src,
                    "importedBy": f"claude2kimi/{VERSION}",
                    "sig": f"{len(msgs)}:{msgs[-1][2]}"},
-        "title": title or clean_title(msgs[0][1]) or f"Imported {source} session",
+        "title": title or clean_title(next(
+            (m[1] for m in msgs if m[0] == "user"), msgs[0][1])),
         "titleKind": "custom", "isCustomTitle": True,
         "lastPrompt": next((m[1] for m in reversed(msgs) if m[0] == "user"), "")[:500],
         "lastTurnReason": "completed",

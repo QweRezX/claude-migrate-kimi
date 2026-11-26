@@ -662,3 +662,39 @@ def test_codex_transcript_unwrap_and_instructions(kimi, tmp_path):
     state = json.loads(next((kimi / "sessions").glob(f"*/{sid}/state.json"))
                        .read_text(encoding="utf-8"))
     assert "AGENTS.md instructions" not in state["title"]
+
+
+def test_codex_indexed_transcript_dedup_and_truncate(kimi, tmp_path):
+    f = tmp_path / "rollout.jsonl"
+    big_assistant = (
+        "В коде запрос формируется корректно.\n\n\n\n"
+        "[6] tool exec result: Script completed\n"
+        "Wall time 0.0 seconds\n"
+        "Output: {}\n\n\n\n"
+        "Reviewed Codex session id: 01a216e9\n"
+        "The Codex agent has requested the following next action\n"
+        "Planned action JSON:\n{}\n"
+        "<guardian_tool_descriptions>x</guardian_tool_descriptions>"
+    )
+    lines = [
+        {"timestamp": "2026-11-26T09:00:00.000Z", "type": "session_meta",
+         "payload": {"id": "x", "cwd": "/work/p"}},
+        {"timestamp": "2026-11-26T09:00:01.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "content": [
+             {"type": "output_text", "text": big_assistant}]}},
+        # relay re-sends the same history: must dedup after unwrap
+        {"timestamp": "2026-11-26T09:00:02.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user", "content": [
+             {"type": "input_text", "text":
+              "[1] assistant: В коде запрос формируется корректно.\n"
+              "[2] user: Понял, спасибо"}]}},
+    ]
+    f.write_text("\n".join(json.dumps(l) for l in lines) + "\n",
+                 encoding="utf-8")
+    msgs, _, _, stats = c2k.extract_codex(f)
+    bodies = [t for r, t, _, _ in msgs]
+    assert "Понял, спасибо" in bodies
+    assert not any("Reviewed Codex session id" in b for b in bodies)
+    assert not any("tool exec result" in b for b in bodies)
+    # deduped: the assistant text appears exactly once
+    assert sum(1 for b in bodies if b.startswith("В коде запрос")) == 1
