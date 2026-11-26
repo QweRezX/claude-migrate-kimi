@@ -42,7 +42,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.7.3"
+VERSION = "0.7.4"
 IMPORT_MARKER = "claude-code"
 
 def kimi_home():
@@ -507,7 +507,8 @@ def convert(claude_jsonl, forced_ws=None, dry_run=False, with_tools=False,
         "id": sid, "version": 2, "cwd": cwd, "archived": False,
         "agents": {"main": {"homedir": f"{sdir.as_posix()}/agents/main", "type": "main"}},
         "custom": {"importedFrom": MARKERS[source], "claudeSession": src,
-                   "importedBy": f"claude2kimi/{VERSION}"},
+                   "importedBy": f"claude2kimi/{VERSION}",
+                   "sig": f"{len(msgs)}:{msgs[-1][2]}"},
         "title": title or clean_title(msgs[0][1]) or f"Imported {source} session",
         "titleKind": "custom", "isCustomTitle": True,
         "lastPrompt": next((m[1] for m in reversed(msgs) if m[0] == "user"), "")[:500],
@@ -735,6 +736,12 @@ def migrate_config(dry_run=False, claude_home=None, report=None):
     src_skills = claude_home / "skills"
     if src_skills.is_dir():
         for skill in sorted(p for p in src_skills.iterdir() if p.is_dir()):
+            if skill.name == "synced":
+                actions.append({"kind": "skill", "action": "skip_synced",
+                                "path": str(skill)})
+                print("SKIP skill 'synced': claude.ai account-sync cache "
+                      "(read-only), not migrated")
+                continue
             dst = kimi_home() / "skills" / skill.name
             if dst.exists():
                 actions.append({"kind": "skill", "action": "skip_exists",
@@ -807,6 +814,66 @@ def migrate_config(dry_run=False, claude_home=None, report=None):
     if report is not None:
         report["config"] = actions
     return actions
+
+
+def update_imported(source="claude", dry_run=False, report=None):
+    """Re-import previously-imported sessions in place: appends messages that
+    appeared in the source after the import. Sessions without our marker
+    (e.g. built-in imports) are not touched and not matchable."""
+    stats = {"updated": [], "uptodate": [], "missing_source": [], "errors": []}
+    for state_path in sorted((kimi_home() / "sessions").glob("*/*/state.json")):
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        custom = state.get("custom") or {}
+        src = custom.get("claudeSession")
+        if not custom.get("importedFrom") or not src or not Path(src).exists():
+            if custom.get("importedFrom") and src and not Path(src).exists():
+                stats["missing_source"].append(src)
+                print(f"SKIP {state.get('title', state_path)}: source file "
+                      f"no longer exists: {src}")
+            continue
+        try:
+            msgs, title, cwd, _ = EXTRACTORS[source](src)
+        except Exception as e:
+            stats["errors"].append({"source": src, "error": str(e)})
+            print(f"ERROR {src}: {e}", file=sys.stderr)
+            continue
+        if not msgs:
+            continue
+        sig = f"{len(msgs)}:{msgs[-1][2]}"
+        if sig == custom.get("sig"):
+            stats["uptodate"].append(src)
+            print(f"UP-TO-DATE {Path(src).name}")
+            continue
+        old_sig = custom.get("sig", "?")
+        if dry_run:
+            print(f"DRY {Path(src).name}: would update ({old_sig} -> {sig})")
+            stats["updated"].append({"source": src, "dry": True})
+            continue
+        sid = state["id"]
+        events, turns = build_wire(msgs)
+        wire = state_path.parent / "agents" / "main" / "wire.jsonl"
+        wire.parent.mkdir(parents=True, exist_ok=True)
+        wire.write_text("\n".join(json.dumps(e, ensure_ascii=False)
+                                  for e in events) + "\n", encoding="utf-8")
+        state["updatedAt"] = msgs[-1][2]
+        state["title"] = title or state["title"]
+        state["lastPrompt"] = next(
+            (m[1] for m in reversed(msgs) if m[0] == "user"), "")[:500]
+        state["custom"]["sig"] = sig
+        state["custom"]["updatedBy"] = f"claude2kimi/{VERSION}"
+        state_path.write_text(json.dumps(state, ensure_ascii=False),
+                              encoding="utf-8")
+        print(f"UPDATE {Path(src).name}: {old_sig} -> {sig} ({turns} turns)")
+        stats["updated"].append({"source": src, "from": old_sig, "to": sig})
+    print(f"\nUpdated: {len(stats['updated'])}, up to date: "
+          f"{len(stats['uptodate'])}, missing source: "
+          f"{len(stats['missing_source'])}, errors: {len(stats['errors'])}")
+    if report is not None:
+        report["update"] = stats
+    return stats
 
 
 def undo(dry_run=False):
@@ -1014,6 +1081,9 @@ def main():
     p.add_argument("--force", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--undo", action="store_true")
+    p.add_argument("--update", action="store_true",
+                   help="re-import sessions previously imported by this tool, "
+                        "appending new messages; source files must still exist")
     p.add_argument("--config", action="store_true",
                    help="migrate configuration instead of sessions: skills, "
                         "CLAUDE.md -> AGENTS.md, MCP servers (never overwrites)")
@@ -1049,6 +1119,14 @@ def main():
 
     if a.undo:
         undo(a.dry_run)
+        return
+    if a.update:
+        report = {"tool": f"claude2kimi/{VERSION}", "update": None}             if a.report else None
+        update_imported(a.source, a.dry_run, report)
+        if report is not None:
+            Path(a.report).write_text(json.dumps(report, ensure_ascii=False,
+                                                 indent=2), encoding="utf-8")
+            print(f"Report written to {a.report}")
         return
     if a.config:
         report = {"tool": f"claude2kimi/{VERSION}",

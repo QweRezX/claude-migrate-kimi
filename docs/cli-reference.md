@@ -190,7 +190,8 @@ python3 claude2kimi.py --all --to-md ./export --project dasha
 ### `--config`
 Migrate configuration instead of sessions:
 
-- `~/.claude/skills/*` → `~/.kimi-code/skills/`
+- `~/.claude/skills/*` → `~/.kimi-code/skills/` (except `skills/synced/`,
+  the read-only claude.ai account-sync cache, which is skipped)
 - `~/.claude/commands/*.md` → converted into skill folders with a
   generated `SKILL.md` (name from the file name, description from the
   command's frontmatter or its first line); project commands from

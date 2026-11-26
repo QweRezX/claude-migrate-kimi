@@ -535,3 +535,12 @@ def test_own_imports_not_flagged_as_duplicates(kimi, session_file):
     # second run: skipped by path-idempotency, not the duplicate guard
     assert c2k.convert(str(session_file),
                        imported=c2k.already_imported()) is None
+
+
+def test_synced_skills_skipped(kimi, claude_home):
+    synced = claude_home / "skills" / "synced"
+    synced.mkdir(parents=True)
+    (synced / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+    c2k.migrate_config(claude_home=claude_home)
+    assert not (kimi / "skills" / "synced").exists()
+    assert (kimi / "skills" / "my-skill").exists()  # normal skill still copied
